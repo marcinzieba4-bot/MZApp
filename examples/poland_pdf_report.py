@@ -39,7 +39,8 @@ CONTENT_W = PAGE_W - MARGIN_L - MARGIN_R
 # ─── DATA ─────────────────────────────────────────────────────────────────────
 IDEAS = [
     {
-        "rank": 1, "name": "Lubawa SA", "ticker": "LBW",
+        "rank": 1, "name": "Lubawa SA", "peers": [("Chemring UK","EV/EBITDA","12×"),("Leonardo IT","EV/EBITDA","16×"),("Rheinmetall DE","EV/EBITDA","30×"),("Thales FR","EV/EBITDA","22×")], "peer_label": "vs LBW 3.8×",
+        "ticker": "LBW",
         "sector": "Defense / Protective Equipment",
         "type_short": "Micro-Cap Neglect + Defense",
         "mktcap_eur": 133, "mktcap_pln": 658,
@@ -62,7 +63,8 @@ IDEAS = [
         "asymmetry_note": "You buy at a discount to floor. Bull/Bear ratio: 9.6×.",
     },
     {
-        "rank": 2, "name": "Agora SA", "ticker": "AGO",
+        "rank": 2, "name": "Agora SA", "peers": [("JCDecaux FR","EV/EBITDA","10×"),("Ströer DE","EV/EBITDA","11×"),("Clear Channel US","EV/EBITDA","8×"),("Kinetic AU","EV/EBITDA","9×")], "peer_label": "vs AMS implied 3.3×",
+        "ticker": "AGO",
         "sector": "Diversified Media / OOH Advertising",
         "type_short": "SOTP Conglomerate Discount",
         "mktcap_eur": 74, "mktcap_pln": 367,
@@ -86,7 +88,8 @@ IDEAS = [
         "asymmetry_note": "SOTP base NAV PLN 1,350m vs market cap PLN 367m = 3.68× coverage.",
     },
     {
-        "rank": 3, "name": "mBank SA", "ticker": "MBK",
+        "rank": 3, "name": "mBank SA", "peers": [("PKO BP PL","P/E","10×"),("Pekao PL","P/E","11×"),("Santander PL","P/E","13×"),("ING BSK PL","P/E","12×")], "peer_label": "vs MBK 12.4×",
+        "ticker": "MBK",
         "sector": "Digital Banking",
         "type_short": "Parent Disposition + CHF Resolution",
         "mktcap_eur": 8700, "mktcap_pln": 43079,
@@ -109,7 +112,8 @@ IDEAS = [
         "asymmetry_note": "Two independent theses; only lose if BOTH CHF escalates AND M&A collapses.",
     },
     {
-        "rank": 4, "name": "Mirbud SA", "ticker": "MRB",
+        "rank": 4, "name": "Mirbud SA", "peers": [("Budimex PL","EV/EBITDA","12×"),("Strabag AT","EV/EBITDA","8×"),("Balfour Beatty UK","EV/EBITDA","9×"),("Ferrovial ES","EV/EBITDA","14×")], "peer_label": "vs MRB road ~5×",
+        "ticker": "MRB",
         "sector": "Construction / Infrastructure",
         "type_short": "Hidden Asset + Rail Pivot",
         "mktcap_eur": 77, "mktcap_pln": 380,
@@ -134,7 +138,8 @@ IDEAS = [
         "asymmetry_note": "Land bank alone worth ~PLN 230m. Rail option is genuinely free.",
     },
     {
-        "rank": 5, "name": "Onde SA", "ticker": "ONDP",
+        "rank": 5, "name": "Onde SA", "peers": [("Elecnor ES","EV/EBITDA","8×"),("Prysmian IT","EV/EBITDA","11×"),("Nexans FR","EV/EBITDA","9×"),("Renew Holdings UK","EV/EBITDA","10×")], "peer_label": "vs ONDP ~7×",
+        "ticker": "ONDP",
         "sector": "Renewable Energy EPC / Grid",
         "type_short": "Pipeline Certainty + Energy Mandate",
         "mktcap_eur": 111, "mktcap_pln": 550,
@@ -159,7 +164,8 @@ IDEAS = [
         "asymmetry_note": "Regulatory mandate is the floor. Miss on execution = only downside.",
     },
     {
-        "rank": 6, "name": "Polimex-Mostostal SA", "ticker": "PXM",
+        "rank": 6, "name": "Polimex-Mostostal SA", "peers": [("Skanska SE","EV/EBITDA","11×"),("Vinci FR","EV/EBITDA","12×"),("BWXT US","EV/EBITDA","18×"),("Babcock UK","EV/EBITDA","8×")], "peer_label": "vs PXM loss-making",
+        "ticker": "PXM",
         "sector": "Industrial Construction / Nuclear",
         "type_short": "Binary Nuclear Option",
         "mktcap_eur": 152, "mktcap_pln": 754,
@@ -243,8 +249,7 @@ class ReportCanvas(canvas.Canvas):
         super().showPage()
 
     def save(self):
-        self._page_number += 1
-        self._draw_footer()
+        # showPage() already drew the footer on the last real page — just finalize
         super().save()
 
     def _draw_footer(self):
@@ -438,7 +443,7 @@ def build_cover(styles):
         ])
 
     col_ws = [0.6*cm, 2.7*cm, 1.1*cm, 3.5*cm, 1.6*cm,
-              1.2*cm, 1.2*cm, 1.2*cm, 1.2*cm, 1.4*cm, 1.1*cm]
+              1.45*cm, 1.45*cm, 1.45*cm, 1.45*cm, 1.4*cm, 1.0*cm]
 
     def p(txt, bold=False, align=TA_CENTER, color=NAVY, size=7.5):
         fn = "Helvetica-Bold" if bold else "Helvetica"
@@ -489,6 +494,41 @@ def build_cover(styles):
         "All prices in PLN. This report is for professional investors only.",
         ParagraphStyle("fn", fontName="Helvetica-Oblique", fontSize=6.5,
                        textColor=SILVER, leading=9)))
+
+    story.append(Spacer(1, 0.4*cm))
+
+    # Key thesis box — fills blank space at bottom of cover
+    thesis_items = [
+        ("<b>Why now?</b>  MSCI reclassification (Q2 2026) brings mandatory passive inflows to every WSE name. "
+         "Institutional desks follow passive flows — the discovery cycle begins this year."),
+        ("<b>Why these six?</b>  Each has a <i>named</i> mispricing mechanism, a <i>named</i> catalyst, and a hard "
+         "downside floor. They are not simply cheap — they are structurally mispriced with a known fix."),
+        ("<b>Why Poland specifically?</b>  Median analyst coverage: 2 per stock. All filings in Polish only. "
+         "60%+ founder-controlled. Information asymmetry directly equals price asymmetry."),
+        ("<b>Edge:</b>  You read Polish. 90% of the institutional world does not."),
+    ]
+    thesis_cells = [[Paragraph("KEY THESIS PREMISES", ParagraphStyle(
+        "tph", fontName="Helvetica-Bold", fontSize=8, textColor=GOLD, leading=11))]]
+    for item in thesis_items:
+        thesis_cells.append([Paragraph(f"▸  {item}", ParagraphStyle(
+            "tpb", fontName="Helvetica", fontSize=8.5, textColor=WHITE,
+            leading=13, leftIndent=6, spaceAfter=3, alignment=TA_JUSTIFY))])
+
+    thesis_t = Table([[c] for c in thesis_cells], colWidths=[CONTENT_W])
+    # flatten: thesis_cells is already list of [Paragraph]
+    thesis_flat = [[item[0]] for item in thesis_cells]
+    thesis_t = Table(thesis_flat, colWidths=[CONTENT_W])
+    thesis_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), NAVY),
+        ("LINEBELOW",     (0, 0), (-1, -1), 0.3, STEEL),
+        ("LINEBEFORE",    (0, 0), (-1, -1), 3, GOLD),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+        ("BACKGROUND",    (0, 0), (-1,  0), STEEL),  # header row darker
+    ]))
+    story.append(thesis_t)
     story.append(PageBreak())
     return story
 
@@ -538,11 +578,11 @@ def build_context(styles):
         ("60%+", "of mid-caps are founder/family controlled"),
         ("2", "median analyst coverage for WSE mid-caps (vs 8+ for German peers)"),
         ("3 days", "EU MAR insider reporting window via ESPI — first-mover advantage"),
-        ("PLN/EUR", "language barrier creates persistent information asymmetry = alpha"),
+        ("FX", "language barrier creates persistent information asymmetry = alpha (all filings in Polish)"),
     ]
     char_data = [[
-        Paragraph(v, ParagraphStyle("bign", fontName="Helvetica-Bold", fontSize=18,
-                                    textColor=GOLD, leading=20, alignment=TA_CENTER)),
+        Paragraph(v, ParagraphStyle("bign", fontName="Helvetica-Bold", fontSize=13,
+                                    textColor=GOLD, leading=18, alignment=TA_CENTER)),
         Paragraph(d, styles["body_sm"]),
     ] for v, d in chars]
 
@@ -677,8 +717,142 @@ def build_framework(styles):
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     story.append(t)
-    story.append(PageBreak())
     return story
+
+
+# ─── SCENARIO RANGE VISUALISER ────────────────────────────────────────────────
+
+def make_price_range_viz(idea):
+    """
+    Full-width horizontal bar showing BEAR / ENTRY / BASE / BULL price markers.
+    Colour zones: red (loss), amber (below base), green (above base).
+    """
+    from reportlab.graphics.shapes import Drawing, Rect, Line, String, Circle
+
+    d_w = CONTENT_W
+    d_h = 3.2 * cm
+    d = Drawing(d_w, d_h)
+
+    # Light background
+    d.add(Rect(0, 0, d_w, d_h, fillColor=LIGHT, strokeColor=None))
+
+    pad_l, pad_r = 2.4 * cm, 2.0 * cm
+    axis_y = d_h * 0.52
+    ax0 = pad_l
+    ax1 = d_w - pad_r
+    ax_w = ax1 - ax0
+
+    # Price → x-pixel mapping
+    lo = idea["bear"]  * 0.90
+    hi = idea["bull"]  * 1.08
+    span = hi - lo
+
+    def px(price):
+        return ax0 + (price - lo) / span * ax_w
+
+    bx = px(idea["bear"])
+    ex = px(idea["entry"])
+    sx = px(idea["base"])
+    lx = px(idea["bull"])
+
+    # Coloured zones
+    d.add(Rect(bx, axis_y - 6, ex - bx, 12, fillColor=colors.HexColor("#FFDDDD"), strokeColor=None))
+    d.add(Rect(ex, axis_y - 6, sx - ex, 12, fillColor=colors.HexColor("#FFF3DD"), strokeColor=None))
+    d.add(Rect(sx, axis_y - 6, lx - sx, 12, fillColor=colors.HexColor("#DDFFDD"), strokeColor=None))
+
+    # Axis spine
+    d.add(Line(ax0, axis_y, ax1, axis_y,
+               strokeColor=colors.HexColor("#AAAAAA"), strokeWidth=0.8))
+
+    def marker(x, price, label, rp, color, above):
+        d.add(Line(x, axis_y - 12, x, axis_y + 12, strokeColor=color, strokeWidth=2))
+        d.add(Circle(x, axis_y, 4, fillColor=color, strokeColor=WHITE, strokeWidth=1))
+        ny = axis_y + 18 if above else axis_y - 26
+        py2 = axis_y + 29 if above else axis_y - 37
+        rp_str = f"({rp:+.0f}%)" if rp != 0 else "(entry)"
+        d.add(String(x, ny,  label,
+                     fontSize=7.5, fillColor=color,
+                     textAnchor="middle", fontName="Helvetica-Bold"))
+        d.add(String(x, py2, f"PLN {price:.0f}  {rp_str}",
+                     fontSize=6.5, fillColor=color,
+                     textAnchor="middle", fontName="Helvetica"))
+
+    marker(bx, idea["bear"],  "BEAR",  ret_pct(idea["entry"], idea["bear"]),  RED,   False)
+    marker(ex, idea["entry"], "ENTRY", 0,                                      GOLD,  True)
+    marker(sx, idea["base"],  "BASE",  ret_pct(idea["entry"], idea["base"]),   STEEL, False)
+    marker(lx, idea["bull"],  "BULL",  ret_pct(idea["entry"], idea["bull"]),   GREEN, True)
+
+    return d
+
+
+# ─── PEER MULTIPLES TABLE ─────────────────────────────────────────────────────
+
+def make_peer_table(idea, styles):
+    """
+    Mini table comparing idea's current multiple to 4 European/global peers.
+    Renders as a compact full-width table with a gold left bar on the subject row.
+    """
+    peers   = idea.get("peers", [])
+    plabel  = idea.get("peer_label", "")
+    metric  = peers[0][1] if peers else "Multiple"
+
+    def pc(txt, bold=False, color=NAVY, align=TA_LEFT, size=7.5):
+        fn = "Helvetica-Bold" if bold else "Helvetica"
+        return Paragraph(txt, ParagraphStyle(
+            "pt", fontName=fn, fontSize=size, textColor=color,
+            leading=10, alignment=align))
+
+    hdr = [pc("Peer / Subject", bold=True, color=WHITE, align=TA_CENTER),
+           pc("Geography", bold=True, color=WHITE, align=TA_CENTER),
+           pc(metric,      bold=True, color=WHITE, align=TA_CENTER),
+           pc("Gap",        bold=True, color=WHITE, align=TA_CENTER)]
+
+    rows = [hdr]
+    for name, _, val in peers:
+        # Split "Chemring UK" into name + geo
+        parts = name.rsplit(" ", 1)
+        pname = parts[0] if len(parts) == 2 else name
+        geo   = parts[1] if len(parts) == 2 else ""
+        rows.append([pc(pname), pc(geo, align=TA_CENTER),
+                     pc(val, bold=True, align=TA_CENTER, color=STEEL),
+                     pc("", align=TA_CENTER)])
+
+    # Subject (this idea) row
+    if idea.get("pe"):
+        subj_val = f"{idea['pe']:.1f}×  (P/E)"
+    elif idea.get("pb"):
+        subj_val = f"{idea['pb']:.2f}×  (P/B)"
+    else:
+        subj_val = "N/M"
+    rows.append([
+        pc(f"► {idea['ticker']} (subject)", bold=True, color=NAVY),
+        pc("PL", align=TA_CENTER),
+        pc(subj_val, bold=True, align=TA_CENTER, color=GOLD),
+        pc(plabel, align=TA_CENTER, size=7, color=RED),
+    ])
+
+    col_ws = [4.5*cm, 2.0*cm, 3.5*cm, CONTENT_W - 10.0*cm]
+    rh = [0.48*cm] * len(rows)
+    t = Table(rows, colWidths=col_ws, rowHeights=rh, repeatRows=1)
+    num_data_rows = len(rows)
+    subject_row   = num_data_rows - 1  # 0-indexed last row
+
+    style = TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), STEEL),
+        ("ROWBACKGROUNDS",(0, 1), (-1, subject_row - 1), [WHITE, BGROW]),
+        ("BACKGROUND",    (0, subject_row), (-1, subject_row), colors.HexColor("#FEF9EC")),
+        ("LINEBEFORE",    (0, subject_row), (0, subject_row), 3, GOLD),
+        ("LINEBELOW",     (0, subject_row), (-1, subject_row), 1.5, GOLD),
+        ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+        ("LINEBELOW",     (0, 0), (-1, 0), 1.5, GOLD),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ])
+    t.setStyle(style)
+    return t
 
 
 # ─── SINGLE IDEA PAGE ─────────────────────────────────────────────────────────
@@ -739,8 +913,8 @@ def build_idea_page(idea, styles):
         t = Table(rows, colWidths=[2.5*cm, 2.0*cm])
         t.setStyle(TableStyle([
             ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#EEEEEE")),
-            ("TOPPADDING",    (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING",    (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
         ]))
         return t
 
@@ -764,7 +938,7 @@ def build_idea_page(idea, styles):
         metrics_block.append(metric_row("Revenue PLNm", f"{idea['rev']:,}m", g))
     metrics_block.append(metric_row("Insider %", f"{idea['insider']:.1f}%"))
     metrics_block.append(metric_row("Institutional %", f"{idea['inst']:.1f}%"))
-    metrics_block.append(metric_row("Analyst Coverage", f"{idea['analysts']} analyst(s)"))
+    metrics_block.append(metric_row("Analyst Coverage", str(idea["analysts"]), "analyst(s)"))
 
     metrics_block.append(Spacer(1, 0.3*cm))
     metrics_block.append(Paragraph("SCENARIO ANALYSIS", ParagraphStyle(
@@ -812,10 +986,10 @@ def build_idea_page(idea, styles):
         ("BACKGROUND",  (0, 4), (-1, 4), NAVY),
         ("ROWBACKGROUNDS", (0, 1), (-1, 3), [WHITE, BGROW, WHITE]),
         ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
     ]))
     metrics_block.append(scen_t)
     metrics_block.append(Spacer(1, 0.2*cm))
@@ -879,6 +1053,51 @@ def build_idea_page(idea, styles):
         ("COLPADDING",   (0, 0), (0, 0), 0),
     ]))
     story.append(layout)
+
+    # ── Price scenario range visualiser ──
+    story.append(Spacer(1, 0.20*cm))
+    viz_hdr_data = [[Paragraph(
+        "PRICE SCENARIO RANGE  —  bear / entry / base / bull",
+        ParagraphStyle("vzh", fontName="Helvetica-Bold", fontSize=7.5,
+                       textColor=STEEL, leading=10))]]
+    viz_hdr_t = Table(viz_hdr_data, colWidths=[CONTENT_W])
+    viz_hdr_t.setStyle(TableStyle([
+        ("LINEBELOW",     (0, 0), (-1, -1), 1.0, GOLD),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(viz_hdr_t)
+    story.append(Spacer(1, 0.1*cm))
+    story.append(make_price_range_viz(idea))
+    story.append(Paragraph(
+        "Zone colours: red = loss territory  |  amber = below base case  |  "
+        "green = above base case.  All prices in PLN.",
+        ParagraphStyle("vzcap", fontName="Helvetica-Oblique", fontSize=6.5,
+                       textColor=SILVER, leading=9)))
+
+    # ── Peer multiples comparison ──
+    story.append(Spacer(1, 0.15*cm))
+    peer_hdr_data = [[Paragraph(
+        "PEER MULTIPLES — HOW THE ENTRY MULTIPLE COMPARES",
+        ParagraphStyle("peh", fontName="Helvetica-Bold", fontSize=7.5,
+                       textColor=STEEL, leading=10))]]
+    peer_hdr_t = Table(peer_hdr_data, colWidths=[CONTENT_W])
+    peer_hdr_t.setStyle(TableStyle([
+        ("LINEBELOW",     (0, 0), (-1, -1), 1.0, GOLD),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    peer_cap = Paragraph(
+        "Peers are selected European or global comparables in the same sector. "
+        "Multiples from Bloomberg consensus, March 2026.",
+        ParagraphStyle("pecap", fontName="Helvetica-Oblique", fontSize=6.5,
+                       textColor=SILVER, leading=9))
+    story.append(KeepTogether([
+        peer_hdr_t, Spacer(1, 0.1*cm),
+        make_peer_table(idea, styles),
+        peer_cap,
+    ]))
+
     story.append(PageBreak())
     return story
 
@@ -989,7 +1208,63 @@ def build_portfolio(styles):
         story.append(t)
         story.append(Spacer(1, 0.08*cm))
 
-    story.append(PageBreak())
+    story.append(Spacer(1, 0.4*cm))
+
+    # Visual allocation bar chart
+    # header and bars are kept together below — no standalone header here
+
+    # Use ticker so names never wrap in the narrow label column
+    bar_data = [(idea["ticker"], pw_ret(idea)) for idea in IDEAS]
+    bar_data.sort(key=lambda x: x[1], reverse=True)
+
+    max_val = max(v for _, v in bar_data)
+    bar_total_w = CONTENT_W - 3.5*cm
+
+    # Build all bars as rows in ONE table so they never split across pages
+    all_bar_rows = []
+    for name, val in bar_data:
+        bar_w = max(0.3*cm, (val / max_val) * bar_total_w)
+        bar_color = GREEN if val > 25 else (AMBER if val > 10 else STEEL)
+        # Inline rect via a coloured cell with fixed width; pad remaining space in same cell
+        name_p = Paragraph(
+            name, ParagraphStyle("bn", fontName="Helvetica-Bold", fontSize=8,
+                                 textColor=NAVY, leading=10))
+        # Bar: colour the cell bg, fix its width via a nested table
+        bar_inner = Table([[""]], colWidths=[bar_w], rowHeights=[0.48*cm])
+        bar_inner.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), bar_color)]))
+        val_p = Paragraph(
+            f"<b>{val:+.0f}%</b>",
+            ParagraphStyle("bv", fontName="Helvetica-Bold", fontSize=9,
+                           textColor=bar_color, leading=11, alignment=TA_RIGHT))
+        all_bar_rows.append([name_p, bar_inner, val_p])
+
+    bar_table = Table(
+        all_bar_rows,
+        colWidths=[1.6*cm, bar_total_w, 1.6*cm],
+        rowHeights=[0.65*cm] * len(all_bar_rows),
+    )
+    bar_table.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("ROWBACKGROUNDS",(0, 0), (-1, -1), [WHITE, BGROW]),
+        ("LINEBELOW",     (0, 0), (-1, -1), 0.3, colors.HexColor("#EEEEEE")),
+    ]))
+    bar_hdr_p = Paragraph(
+        "VISUALISED ALLOCATION — PROBABILITY-WEIGHTED RETURNS",
+        ParagraphStyle("barhdr2", fontName="Helvetica-Bold", fontSize=9,
+                       textColor=NAVY, leading=12))
+    bar_hdr_line = HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=6)
+    story.append(KeepTogether([bar_hdr_p, bar_hdr_line, Spacer(1, 0.15*cm), bar_table]))
+
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        "Bar length proportional to probability-weighted return across bear / base / bull scenarios.",
+        ParagraphStyle("bcap", fontName="Helvetica-Oblique", fontSize=6.5,
+                       textColor=SILVER, leading=9)))
+    # No PageBreak — monitoring section flows on the same page if room permits
     return story
 
 
@@ -1033,8 +1308,8 @@ def build_monitoring(styles):
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, BGROW]),
         ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
         ("LINEBELOW", (0, 0), (-1, 0), 2, GOLD),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("LEFTPADDING",   (0, 0), (-1, -1), 5),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1063,7 +1338,7 @@ def build_monitoring(styles):
         verd_data.append([
             Paragraph(str(i), ParagraphStyle("vn", fontName="Helvetica-Bold", fontSize=8,
                                               textColor=NAVY, leading=10, alignment=TA_CENTER)),
-            Paragraph(idea["name"], ParagraphStyle("vn2", fontName="Helvetica-Bold", fontSize=8,
+            Paragraph(idea["name"] if len(idea["name"]) <= 12 else idea["ticker"] + " SA", ParagraphStyle("vn2", fontName="Helvetica-Bold", fontSize=8,
                                                     textColor=NAVY, leading=10)),
             Paragraph(idea["ticker"], ParagraphStyle("vt", fontName="Helvetica", fontSize=8,
                                                       textColor=STEEL, leading=10, alignment=TA_CENTER)),
@@ -1084,8 +1359,8 @@ def build_monitoring(styles):
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, BGROW]),
         ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
         ("LINEBELOW", (0, 0), (-1, 0), 2, GOLD),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING",   (0, 0), (-1, -1), 5),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1146,9 +1421,8 @@ def build_pdf(output_path="poland_asymmetric_ideas.pdf"):
     story += build_cover(styles)
     story += build_context(styles)
     story += build_framework(styles)
+    story.append(PageBreak())   # ensure framework ends cleanly; first idea on fresh page
 
-    story.append(gold_bar("  SECTION 3 — SIX IDEAS IN DETAIL", styles))
-    story.append(PageBreak())
     for idea in IDEAS:
         story += build_idea_page(idea, styles)
 
