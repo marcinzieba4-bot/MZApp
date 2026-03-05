@@ -16,6 +16,14 @@ EXAMPLES = {
         "module": "examples.mirbud_analysis",
         "description": "Mirbud S.A. (WSE: MRB) — Polish construction / asset release play",
     },
+    "sp500_inclusion": {
+        "module": "examples.sp500_inclusion",
+        "description": "S&P 500 inclusion strategy — pre-announcement alpha + momentum screen",
+    },
+    "msci_wig_inclusion": {
+        "module": "examples.msci_wig_inclusion",
+        "description": "MSCI inclusion for WIG companies — Polish stocks approaching MSCI thresholds",
+    },
 }
 
 
