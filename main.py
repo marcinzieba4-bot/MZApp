@@ -24,6 +24,10 @@ EXAMPLES = {
         "module": "examples.msci_wig_inclusion",
         "description": "MSCI inclusion for WIG companies — Polish stocks approaching MSCI thresholds",
     },
+    "msci_ftse_candidates": {
+        "module": "examples.msci_ftse_candidates_2025",
+        "description": "WIG stocks near MSCI/FTSE thresholds + momentum filter + historical backtest",
+    },
 }
 
 
