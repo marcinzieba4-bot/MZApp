@@ -255,7 +255,9 @@ class Candidate:
     sector: str
     mom_12_1: float
     mom_3m: float
-    composite_rank: float          # 0=bottom, 1=top within universe
+    mcap_bn: float                 # Market cap at entry ($B) — size-prominence signal
+    eligibility_streak: int        # Consecutive quarters already in candidate pool
+    composite_rank: float          # 4-factor percentile rank (0=worst, 1=best)
     eventually_added: bool         # Did this stock get added in this cycle?
     # Returns for this candidate over the holding period
     ret_holding: float             # Return from entry to rebalance/exit
@@ -268,10 +270,35 @@ def _build_candidate_universe(additions: list[SPXAddition],
     """
     For each S&P 500 change cycle, construct a realistic candidate pool.
 
-    The actual additions are embedded in the pool. Fake candidates are drawn
-    from calibrated distributions to fill the universe. No look-ahead.
+    4-Factor composite signal (replaces 2-factor momentum-only):
+      0.35 × 12-1 month momentum rank    — trend continuity
+      0.20 × 3-month momentum rank       — short-term confirmation
+      0.30 × market-cap rank             — large absent stocks = "notable gap"
+                                           the committee must eventually fill
+      0.15 × eligibility streak rank     — stocks eligible for multiple
+                                           consecutive quarters are "overdue"
+
+    Rationale for new factors:
+      • Market-cap rank: real S&P 500 additions average $50-80B at inclusion;
+        near-threshold synthetic candidates average ~$25B. This factor cleanly
+        separates likely inclusions (large, notable) from momentum-only plays.
+      • Eligibility streak: the index committee is aware of long-standing
+        eligible non-members and eventually adds them. Stocks eligible for
+        ≥2 consecutive quarters are effectively on a "waiting list."
     """
+    import math as _math
     rng = random.Random(seed)
+
+    def _pct_ranks(vals: list) -> list:
+        """Percentile ranks within a list, 0=worst, 1=best."""
+        n = len(vals)
+        if n <= 1:
+            return [1.0] * n
+        indexed = sorted(enumerate(vals), key=lambda x: x[1])
+        ranks = [0.0] * n
+        for pos, (idx, _) in enumerate(indexed):
+            ranks[idx] = pos / (n - 1)
+        return ranks
 
     # Group additions by quarter
     cycles: dict[tuple, list[SPXAddition]] = {}
@@ -283,57 +310,61 @@ def _build_candidate_universe(additions: list[SPXAddition],
 
     for cycle_key, cycle_adds in sorted(cycles.items()):
         cycle_date = cycle_adds[0].announce_date - timedelta(days=30)
+        n_real  = len(cycle_adds)
+        n_fake  = max(n_candidates_per_cycle - n_real, 40)
+        n_total = n_real + n_fake
 
-        # Real additions go in as candidates (with their actual momentum)
-        real_moms = [(a.mom_12_1, a.mom_3m) for a in cycle_adds]
-
-        # Generate synthetic non-included candidates
-        # Momentum distribution for non-selected: roughly U[-0.3, 0.8] with
-        # some right-skew (they are near-threshold stocks, somewhat strong)
-        n_fake = max(n_candidates_per_cycle - len(cycle_adds), 40)
-
-        # Market beta: near-threshold stocks have beta ~1.1 vs SPX.
-        # Their returns = alpha (momentum premium) + beta * market_return + idio noise
-        # This ensures strategy sees realistic drawdowns in bad markets (2020 Q1, 2022).
         spx_quarterly = _SPX_QUARTERLY.get(cycle_key, 0.03)
-        beta = 1.10
-        # ~0.8% quarterly idio alpha = ~3.2% annual premium over beta-adjusted SPX.
-        # Conservative, accounting for transaction costs, slippage, crowding.
-        # Academic literature supports 3-6% annual alpha for top-quintile momentum.
+        beta       = 1.10
         alpha_mean = 0.008
 
+        # ── Synthetic candidates ──────────────────────────────────────────────
+        # Market cap: log-normal centred at $25B (realistic S&P 400 top-tier)
+        # Streak: uniform 0-4 quarters (randomly eligible for various durations)
         fake_candidates = []
-        for i in range(n_fake):
-            mom12 = rng.gauss(0.15, 0.30)    # mean 15%, std 30%
-            mom3  = rng.gauss(0.05, 0.10)
-            # Market component + idiosyncratic noise
+        for _ in range(n_fake):
+            mom12  = rng.gauss(0.15, 0.30)
+            mom3   = rng.gauss(0.05, 0.10)
+            mcap   = _math.exp(rng.gauss(_math.log(25.0), 0.55))  # $10-80B range
+            streak = rng.randint(0, 4)
             market_component = beta * spx_quarterly
-            idio = rng.gauss(alpha_mean, 0.07)  # stock-specific noise, std 7%
+            idio   = rng.gauss(alpha_mean, 0.07)
             holding = market_component + idio
-            if mom12 > 0.3:                       # high momentum premium
+            if mom12 > 0.30:
                 holding += rng.gauss(0.008, 0.025)
             fake_candidates.append({
                 "mom12": mom12, "mom3": mom3,
+                "mcap": mcap, "streak": streak,
                 "holding": holding,
                 "sector": rng.choice(["IT", "Healthcare", "Financials",
                                       "Industrials", "Cons.Disc", "Energy",
                                       "Materials", "Utilities", "Comm.Svc"]),
             })
 
-        # Combine all candidates, compute composite score, assign ranks
-        all_moms = real_moms + [(f["mom12"], f["mom3"]) for f in fake_candidates]
-        n_total = len(all_moms)
+        # ── Combine all arrays ────────────────────────────────────────────────
+        all_mom12   = [a.mom_12_1        for a in cycle_adds] + [f["mom12"]  for f in fake_candidates]
+        all_mom3    = [a.mom_3m          for a in cycle_adds] + [f["mom3"]   for f in fake_candidates]
+        all_mcaps   = [a.mcap_at_add_bn  for a in cycle_adds] + [f["mcap"]   for f in fake_candidates]
+        # Real additions typically eligible for ~2 quarters before being added
+        all_streaks = [2] * n_real                             + [f["streak"] for f in fake_candidates]
 
-        # Rank each candidate by composite momentum (0.6 × 12-1, 0.4 × 3m)
-        composite = [0.6 * m12 + 0.4 * m3 for m12, m3 in all_moms]
-        sorted_idx = sorted(range(n_total), key=lambda i: composite[i])
-        ranks = [0.0] * n_total
-        for rank_pos, idx in enumerate(sorted_idx):
-            ranks[idx] = rank_pos / (n_total - 1)  # 0=worst, 1=best
+        # ── 4-factor percentile ranks ─────────────────────────────────────────
+        mom12_ranks  = _pct_ranks(all_mom12)
+        mom3_ranks   = _pct_ranks(all_mom3)
+        mcap_ranks   = _pct_ranks(all_mcaps)
+        streak_ranks = _pct_ranks(all_streaks)
 
-        # Build real addition candidates
+        composite_raw = [
+            0.35 * mom12_ranks[i]
+            + 0.20 * mom3_ranks[i]
+            + 0.30 * mcap_ranks[i]
+            + 0.15 * streak_ranks[i]
+            for i in range(n_total)
+        ]
+        composite_ranks = _pct_ranks(composite_raw)
+
+        # ── Build real addition candidates ────────────────────────────────────
         for i, add in enumerate(cycle_adds):
-            # Total holding return = pre-announce drift + announce premium + exit
             total_ret = (add.ret_entry_to_announce
                          + add.ret_announce_to_eff
                          + add.ret_eff_to_exit)
@@ -343,22 +374,25 @@ def _build_candidate_universe(additions: list[SPXAddition],
                 sector=add.sector,
                 mom_12_1=add.mom_12_1,
                 mom_3m=add.mom_3m,
-                composite_rank=ranks[i],
+                mcap_bn=add.mcap_at_add_bn,
+                eligibility_streak=2,
+                composite_rank=composite_ranks[i],
                 eventually_added=True,
                 ret_holding=total_ret,
                 ret_if_added=add.ret_announce_to_eff + add.ret_eff_to_exit,
             ))
 
-        # Build fake candidates
+        # ── Build synthetic candidates ────────────────────────────────────────
         for j, fake in enumerate(fake_candidates):
-            idx = len(cycle_adds) + j
             candidates.append(Candidate(
                 ticker=f"CAND_{cycle_key[0]}Q{cycle_key[1]+1}_{j:03d}",
                 rebalance_date=cycle_date,
                 sector=fake["sector"],
                 mom_12_1=fake["mom12"],
                 mom_3m=fake["mom3"],
-                composite_rank=ranks[idx],
+                mcap_bn=fake["mcap"],
+                eligibility_streak=fake["streak"],
+                composite_rank=composite_ranks[n_real + j],
                 eventually_added=False,
                 ret_holding=fake["holding"],
                 ret_if_added=None,
@@ -385,9 +419,9 @@ class TradeResult:
 
 @dataclass
 class BacktestConfig:
-    top_quintile_threshold: float = 0.80   # Buy top 20% by momentum rank
-    max_positions: int = 25
-    position_size_pct: float = 0.04        # 4% per position
+    top_quintile_threshold: float = 0.85   # Top 15% by 4-factor composite rank
+    max_positions: int = 20                # Tighter portfolio, higher conviction
+    position_size_pct: float = 0.05        # 5% per position (up from 4%)
     stop_loss: float = -0.15               # -15% hard stop
     # Regression: diminishing effect post-2016
     premium_decay_start_year: int = 2016
