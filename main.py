@@ -28,6 +28,10 @@ EXAMPLES = {
         "module": "examples.msci_ftse_candidates_2025",
         "description": "WIG stocks near MSCI/FTSE thresholds + momentum filter + historical backtest",
     },
+    "walkforward_backtest": {
+        "module": "examples.walkforward_backtest_run",
+        "description": "Honest walk-forward MSCI Poland backtest 2018-2026, no look-ahead bias, FP handling",
+    },
 }
 
 
