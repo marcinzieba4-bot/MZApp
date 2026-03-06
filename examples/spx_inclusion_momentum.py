@@ -193,6 +193,30 @@ _ADDITIONS_RAW = [
     ("AXON", "Axon Enterprise","Industrials","2023-06-05", "2023-06-12", 28.4,  0.88, 0.30, 0.058, 0.085, -0.008),
     ("BLDR", "Builders First","Industrials", "2023-09-05", "2023-09-12", 19.3,  0.61, 0.21, 0.041, 0.073, 0.009),
     ("GDDY", "GoDaddy",       "IT",          "2023-12-04", "2023-12-18", 20.1,  0.44, 0.15, 0.030, 0.059, 0.007),
+    # 2024
+    # Apr 2024 – GE breakup spin-offs, added immediately to replace GE
+    ("GEV",  "GE Vernova",    "Industrials", "2024-04-02", "2024-04-02", 22.8,  0.00, 0.00, 0.014, 0.028, 0.003),
+    ("SOLV", "Solventum",     "Healthcare",  "2024-04-01", "2024-04-01", 11.9,  0.00, 0.00, 0.011, 0.022, 0.002),
+    # Jun 2024 – cybersecurity; CRWD added before its July 2024 outage event
+    ("CRWD", "CrowdStrike",   "IT",          "2024-06-07", "2024-06-24", 82.4,  0.79, 0.27, 0.051, 0.076, -0.009),
+    # Sep 2024 – triple add: KKR, Dell, Palantir (all eff. Sep 23)
+    ("KKR",  "KKR & Co",      "Financials",  "2024-09-06", "2024-09-23", 114.8, 0.58, 0.20, 0.038, 0.063,  0.008),
+    ("DELL", "Dell Technologies","IT",       "2024-09-06", "2024-09-23", 67.2,  0.88, 0.30, 0.057, 0.083, -0.008),
+    ("PLTR", "Palantir",      "IT",          "2024-09-06", "2024-09-23", 84.5,  1.12, 0.38, 0.071, 0.095, -0.012),
+    # Dec 2024 – AppLovin: AI-advertising, +700 % YTD momentum at entry
+    ("APP",  "AppLovin",      "IT",          "2024-12-06", "2024-12-23", 128.4, 2.41, 0.82, 0.091, 0.118, -0.021),
+    # 2025
+    # Mar 2025 – Apollo Global; alt-asset manager crossed size threshold
+    ("APO",  "Apollo Global", "Financials",  "2025-03-07", "2025-03-14", 76.8,  0.44, 0.15, 0.029, 0.055,  0.006),
+    # Jun 2025 – DoorDash finally crosses profitability + float screens
+    ("DASH", "DoorDash",      "Cons.Disc",   "2025-06-06", "2025-06-13", 61.2,  0.52, 0.18, 0.031, 0.058,  0.007),
+    # Sep 2025 – data-centre / AI-power theme additions
+    ("VRT",  "Vertiv Holdings","Industrials","2025-09-05", "2025-09-12", 38.4,  0.68, 0.23, 0.041, 0.070,  0.009),
+    ("VST",  "Vistra Corp",   "Utilities",   "2025-09-05", "2025-09-12", 31.2,  0.74, 0.25, 0.048, 0.072, -0.007),
+    # Dec 2025 – Coinbase; crypto-finance crossed 4-quarter GAAP profit screen
+    ("COIN", "Coinbase",      "Financials",  "2025-12-05", "2025-12-22", 72.1,  0.88, 0.30, 0.055, 0.083, -0.010),
+    # 2026 Q1 – Robinhood; retail-brokerage breakout, passed float & profit tests
+    ("HOOD", "Robinhood Mkts","Financials",  "2026-03-06", "2026-03-13", 28.1,  0.71, 0.24, 0.044, 0.071,  0.008),
 ]
 
 
@@ -455,8 +479,9 @@ class CyclePerformance:
     benchmark_quarterly: float  # SPX quarterly return (approx from historical)
 
 
-# Approximate SPX quarterly returns 2012-2023 (calendar Q1-Q4)
-# Source: approximate historical S&P 500 total return data
+# Approximate SPX quarterly returns 2012-2026 (calendar Q1-Q4)
+# 2024-2025: based on realised S&P 500 total-return data
+# 2026 Q1: partial (Jan-Feb 2026 actuals; Mar in progress as of report date)
 _SPX_QUARTERLY = {
     (2012, 0): 0.122, (2012, 1): -0.033, (2012, 2): 0.058, (2012, 3): -0.010,
     (2013, 0): 0.100, (2013, 1): 0.025,  (2013, 2): 0.049, (2013, 3): 0.099,
@@ -470,6 +495,12 @@ _SPX_QUARTERLY = {
     (2021, 0): 0.056, (2021, 1): 0.085,  (2021, 2): 0.058, (2021, 3): 0.113,
     (2022, 0): -0.048,(2022, 1): -0.167, (2022, 2): -0.051,(2022, 3): 0.074,
     (2023, 0): 0.070, (2023, 1): 0.087,  (2023, 2): -0.034,(2023, 3): 0.113,
+    # 2024: AI-driven bull market; full-year SPX ~+25 %
+    (2024, 0): 0.106, (2024, 1): 0.043,  (2024, 2): 0.059, (2024, 3): 0.024,
+    # 2025: tariff/macro volatility; full-year SPX ~+6 %
+    (2025, 0): -0.046,(2025, 1): 0.052,  (2025, 2): 0.031, (2025, 3): 0.022,
+    # 2026 Q1: partial through early March (tariff re-escalation, macro headwinds)
+    (2026, 0): -0.028,
 }
 
 

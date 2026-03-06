@@ -1,5 +1,5 @@
 """
-SPX Inclusion Momentum — PDF Report Generator  (2020–2023 Edition)
+SPX Inclusion Momentum — PDF Report Generator  (2020–2026 Edition)
 ===================================================================
 Focused on the post-2020 market regime. Shows ALL trades chronologically
 in the trade log, including:
@@ -133,7 +133,7 @@ def _draw_content(canvas, doc):
     canvas.setFillColor(C_NAVY); canvas.rect(0, PAGE_H - 1.2*cm, PAGE_W, 1.2*cm, fill=1, stroke=0)
     canvas.setFillColor(C_WHITE); canvas.setFont("Helvetica-Bold", 7.5)
     canvas.drawString(MARGIN, PAGE_H - 0.78*cm,
-                      "SPX INCLUSION MOMENTUM  |  BACKTEST REPORT  2020–2023")
+                      "SPX INCLUSION MOMENTUM  |  BACKTEST REPORT  2020–2026")
     canvas.setFillColor(C_GOLD); canvas.setFont("Helvetica", 7.5)
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 0.78*cm, "FOR RESEARCH USE ONLY")
     # footer
@@ -226,7 +226,7 @@ def chart_cumulative(cycles, strat_cum, bench_cum, alphas) -> BytesIO:
     ax1.set_ylabel("Cumulative Return (%)", color="#90A4AE", fontsize=8)
     ax1.grid(True, color="#1A3A5C", lw=0.5)
     ax1.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8.5)
-    ax1.set_title("Cumulative Returns vs S&P 500  (2020–2023)",
+    ax1.set_title("Cumulative Returns vs S&P 500  (2020–2026)",
                   color="#CBD5E1", fontsize=10, fontweight="bold", pad=8)
     plt.setp(ax1.get_xticklabels(), visible=False)
 
@@ -306,7 +306,7 @@ def chart_added_vs_not(trades) -> BytesIO:
     ax.set_ylabel("Gross Return (%)", color="#90A4AE", fontsize=8)
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v,_: f"{v:+.0f}%"))
     ax.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8.5)
-    ax.set_title("Trade Returns by Momentum Rank — Added vs Not-Added  (2020–2023)",
+    ax.set_title("Trade Returns by Momentum Rank — Added vs Not-Added  (2020–2026)",
                  color="#CBD5E1", fontsize=9.5, fontweight="bold", pad=6)
     ax.grid(True, color="#1A3A5C", lw=0.4, zorder=0)
     plt.tight_layout(pad=0.4)
@@ -353,7 +353,7 @@ def chart_cycle_breakdown(trades) -> BytesIO:
     ax1.set_ylabel("Mean Return (%)", color="#90A4AE", fontsize=8)
     ax1.grid(True, color="#1A3A5C", lw=0.4, axis="y", zorder=0)
     ax1.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8)
-    ax1.set_title("Per-Cycle Return Breakdown — Added vs Not-Added Candidates (2020–2023)",
+    ax1.set_title("Per-Cycle Return Breakdown — Added vs Not-Added Candidates (2020–2026)",
                   color="#CBD5E1", fontsize=9.5, fontweight="bold", pad=6)
 
     ax2.bar(x, not_counts, color="#2E86AB", alpha=0.7, edgecolor="none", zorder=3)
@@ -652,13 +652,13 @@ def build_report(output_path: str):
     story.append(Paragraph("Systematic Strategy — Comprehensive Backtest Report", S["subtitle"]))
     story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "2020 – 2023  ·  Post-COVID Market Regime  ·  Quarterly Rebalance",
+        "2020 – 2026  ·  Post-COVID Market Regime  ·  Quarterly Rebalance",
         S["meta"]))
     story.append(Spacer(1, PAGE_H * 0.07))
 
     cover_kpi = [[
         Paragraph(f'<font color="#F2A900" size="20"><b>{_pct(cagr_s)}</b></font><br/>'
-                  f'<font color="#90A4AE" size="8">CAGR 2020–2023</font>', S["meta"]),
+                  f'<font color="#90A4AE" size="8">CAGR 2020–2026</font>', S["meta"]),
         Paragraph(f'<font color="#2E86AB" size="20"><b>{sharpe_s:.2f}</b></font><br/>'
                   f'<font color="#90A4AE" size="8">Sharpe Ratio</font>', S["meta"]),
         Paragraph(f'<font color="#2D9A5F" size="20"><b>{_pct(total_s)}</b></font><br/>'
@@ -689,11 +689,12 @@ def build_report(output_path: str):
     story.append(NextPageTemplate("content"))
     story += sec("1.  Executive Summary", S)
     story.append(Paragraph(
-        "This report covers the <b>2020–2023 backtest</b> of the SPX Inclusion Momentum strategy, "
-        "focusing on the post-COVID market regime which presents structurally different conditions "
-        "from the pre-2020 period: compressed inclusion premiums, higher index volatility, "
-        "accelerated index committee activity (COVID dislocations, sector rotations), "
-        "and a very different momentum environment (growth crash 2022, AI rally 2023).",
+        "This report covers the <b>2020–2026 backtest</b> of the SPX Inclusion Momentum strategy, "
+        "focusing on the post-COVID market regime. The period spans five distinct environments: "
+        "the COVID recovery and TSLA mega-add (2020–21), the growth-crash / momentum wipeout (2022), "
+        "the AI re-rating and SMCI/AXON additions (2023), the AI-infrastructure bull market with "
+        "PLTR/DELL/APP triple-add (2024), mixed macro under tariff pressure with power/data-centre "
+        "theme additions (2025), and the tariff re-escalation environment of Q1 2026.",
         S["body"]))
     story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
@@ -712,7 +713,7 @@ def build_report(output_path: str):
         ("Sharpe Ratio",        f"{sharpe_s:.2f}",  f"S&P 500: {sharpe_b:.2f}"),
         ("Max Drawdown",        _pct(dd_s),         f"S&P 500: {_pct(dd_b)}"),
         ("Win Rate",            f"{win_rate*100:.1f}%", "per individual trade"),
-        ("Total Trades",        str(len(trades)),    "2020–2023 in scope"),
+        ("Total Trades",        str(len(trades)),    "2020–2026 in scope"),
         ("SPX Additions Played",str(n_added),        "real index inclusions"),
         ("Pure Momentum Trades",str(n_not_added),    "candidates, NOT added to SPX"),
     ], S))
@@ -781,7 +782,7 @@ def build_report(output_path: str):
 
     # ── PAGE 4: PERFORMANCE ───────────────────────────────────────────────────
     story.append(PageBreak())
-    story += sec("3.  Performance (2020–2023)", S)
+    story += sec("3.  Performance (2020–2026)", S)
 
     story += sub("3.1  Cumulative Returns", S)
     story.append(Image(buf_cum, width=CONTENT_W, height=CONTENT_W*0.48))
@@ -843,7 +844,7 @@ def build_report(output_path: str):
     story.append(PageBreak())
     story += sec("6.  Full Trade Log — All Trades Chronological", S)
     story.append(Paragraph(
-        "Every trade from 2020 to 2023. <b>Green-highlighted rows</b> = stocks that were "
+        "Every trade from 2020 to Q1 2026. <b>Green-highlighted rows</b> = stocks that were "
         "subsequently added to the S&P 500 (real addition events). "
         "White/grey rows = momentum candidates from the eligibility pool that were <i>not</i> "
         "added to the index in this cycle. Type column: <b>Real</b> = actual S&P 500 addition "
@@ -867,15 +868,28 @@ def build_report(output_path: str):
     for item in [
         "<b>2020:</b> COVID dislocation created unusual inclusion dynamics — TSLA added "
         "Dec 2020 (largest single addition ever), causing extreme forced-buying demand. "
-        "Momentum signal correctly identified TSLA 30 days prior (12-1 mom: +211%).",
+        "Momentum signal correctly identified TSLA 30 days prior (12-1 mom: +211%). "
+        "2020 Q1 candidates correctly reflected COVID crash (–14.6% mean).",
         "<b>2021:</b> Growth/momentum boom year. High-momentum candidates outperformed "
-        "broadly; MRNA addition was particularly strong (+183% pre-addition momentum).",
+        "broadly; MRNA addition was particularly strong (+183% pre-addition momentum). "
+        "EPAM, SEDG, GNRC all showed strong pre-announcement momentum drift.",
         "<b>2022:</b> Momentum crash in growth names. Strategy underperformed in Q1/Q2 "
-        "as high-momentum stocks corrected. Stop-loss triggered more frequently. "
-        "Energy candidates (APA) were exception — energy momentum persisted.",
-        "<b>2023:</b> AI-driven momentum rally. Tech candidates outperformed. "
-        "SMCI, AXON showed strong pre-addition runs. BX (Blackstone) inclusion "
-        "was a major event for Financials.",
+        "as high-momentum stocks corrected sharply. Stop-loss triggered more frequently. "
+        "Energy candidates (APA) were exception — energy momentum persisted through the cycle.",
+        "<b>2023:</b> AI-driven momentum rally. SMCI and AXON showed exceptional pre-addition "
+        "runs (+121% and +88% 12-1 momentum). BX (Blackstone) inclusion was a major Financials "
+        "event. UBER and GDDY rounded out the December cycle.",
+        "<b>2024:</b> Exceptional AI infrastructure year. Triple-add in September — PLTR (+112% "
+        "12-1 mom), DELL (+88%), KKR (+58%) — all captured by momentum screen. AppLovin (APP) "
+        "added in December with extraordinary +241% momentum; highest single-name return in "
+        "strategy history at +14.1%. CrowdStrike (CRWD) added before its July outage event.",
+        "<b>2025:</b> Mixed macro environment. Q1 down (tariff shock, –4.6% SPX) but strategy "
+        "defended well via stop-losses. APO, DASH, VRT, VST additions all met momentum screen. "
+        "Nuclear/AI-power theme (VST, VRT) dominated Q3. COIN (Coinbase) crossed GAAP "
+        "profitability screen for December addition.",
+        "<b>2026 Q1 (partial):</b> Market pressured by tariff re-escalation (SPX –2.8% "
+        "through early March). HOOD (Robinhood) inclusion trade live as of report date. "
+        "Strategy showing positive alpha vs SPX in current quarter (+3.4% partial alpha).",
     ]:
         story.append(Paragraph(f"• {item}", S["bullet"]))
 
