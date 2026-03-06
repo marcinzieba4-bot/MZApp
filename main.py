@@ -32,6 +32,10 @@ EXAMPLES = {
         "module": "examples.walkforward_backtest_run",
         "description": "Honest walk-forward MSCI Poland backtest 2018-2026, no look-ahead bias, FP handling",
     },
+    "generate_pdf_report": {
+        "module": "examples.generate_pdf_report",
+        "description": "Generate PDF trade log + performance report for the walk-forward backtest",
+    },
 }
 
 
