@@ -344,7 +344,10 @@ def _build_candidate_universe(additions: list[SPXAddition],
         # ── Combine all arrays ────────────────────────────────────────────────
         all_mom12   = [a.mom_12_1        for a in cycle_adds] + [f["mom12"]  for f in fake_candidates]
         all_mom3    = [a.mom_3m          for a in cycle_adds] + [f["mom3"]   for f in fake_candidates]
-        all_mcaps   = [a.mcap_at_add_bn  for a in cycle_adds] + [f["mcap"]   for f in fake_candidates]
+        # Deflate announcement-date mcap by 3-month return to approximate the
+        # rebalance-date (entry) mcap — avoids look-ahead from pre-announcement
+        # price run-up being baked into the market-cap ranking factor.
+        all_mcaps   = [a.mcap_at_add_bn / (1.0 + a.mom_3m) for a in cycle_adds] + [f["mcap"] for f in fake_candidates]
         # Real additions typically eligible for ~2 quarters before being added
         all_streaks = [2] * n_real                             + [f["streak"] for f in fake_candidates]
 
@@ -374,7 +377,7 @@ def _build_candidate_universe(additions: list[SPXAddition],
                 sector=add.sector,
                 mom_12_1=add.mom_12_1,
                 mom_3m=add.mom_3m,
-                mcap_bn=add.mcap_at_add_bn,
+                mcap_bn=add.mcap_at_add_bn / (1.0 + add.mom_3m),
                 eligibility_streak=2,
                 composite_rank=composite_ranks[i],
                 eventually_added=True,
