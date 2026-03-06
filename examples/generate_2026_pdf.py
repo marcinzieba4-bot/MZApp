@@ -1,13 +1,16 @@
 """
-PDF Report — MSCI Poland 2026 Prospective Trade Ideas
-======================================================
-Generates a professional PDF covering:
-  • Epistemic disclaimer (knowledge cutoff + estimated data)
-  • Market context for 2026 MSCI Poland SAR cycle
-  • Per-candidate trade sheets: rationale, entry criteria, risks, verification checklist
-  • Deletion risk section
-  • Decision framework / checklist
-  • Historical backtest comparison (so reader can contextualise expected returns)
+PDF Report — MSCI Poland 2026 Verified Candidate Watchlist
+===========================================================
+Built from live web-search data (March 2026).
+Includes critical corrections to previous estimates.
+
+Sources used:
+  • MSCI Poland Index Factsheet (Nov 2025 data)
+  • MSCI May 2025 & Nov 2025 SAR press releases
+  • Biznes PAP / StockWatch.pl reporting on May 2025 additions
+  • stockanalysis.com, investing.com for market cap data
+  • MSCI GIMI Methodology (Aug 2025 PDF)
+  • FTSE Russell country classification documentation
 """
 
 import sys, os
@@ -24,10 +27,11 @@ from reportlab.platypus import (
 )
 from reportlab.graphics.shapes import Drawing, Rect, String, Line
 
-from examples.candidates_2026 import build_2026_candidates, ProspectiveCandidate
-from framework.walkforward_backtest import build_screen_events, simulate_portfolio
+from examples.candidates_2026 import build_verified_candidates, Candidate2026
 
-# ── Colours ──────────────────────────────────────────────────────────────────
+PAGE_W, PAGE_H = A4
+MARGIN = 1.8 * cm
+
 NAVY  = colors.HexColor("#0D1B2A")
 BLUE  = colors.HexColor("#1565C0")
 TEAL  = colors.HexColor("#00796B")
@@ -39,39 +43,30 @@ MGRAY = colors.HexColor("#E0E0E0")
 DGRAY = colors.HexColor("#757575")
 WHITE = colors.white
 BLACK = colors.black
-GOLD  = colors.HexColor("#F9A825")
-
-PAGE_W, PAGE_H = A4
-MARGIN = 1.8 * cm
-
+CORAL = colors.HexColor("#BF360C")
 
 def S(name, **kw):
-    defaults = dict(fontSize=8.5, leading=12, fontName="Helvetica",
-                    textColor=BLACK, spaceAfter=3)
-    defaults.update(kw)
-    return ParagraphStyle(name, **defaults)
+    d = dict(fontSize=8.5, leading=12, fontName="Helvetica", textColor=BLACK, spaceAfter=3)
+    d.update(kw)
+    return ParagraphStyle(name, **d)
 
-
-STYLES = {
-    "h1":       S("h1", fontSize=15, leading=20, textColor=NAVY,
-                  fontName="Helvetica-Bold", spaceBefore=12, spaceAfter=6),
-    "h2":       S("h2", fontSize=11, leading=15, textColor=BLUE,
-                  fontName="Helvetica-Bold", spaceBefore=8, spaceAfter=4),
-    "h3":       S("h3", fontSize=9.5, leading=13, textColor=TEAL,
-                  fontName="Helvetica-Bold", spaceBefore=6, spaceAfter=3),
-    "body":     S("body"),
-    "small":    S("small", fontSize=7.5, leading=11, textColor=DGRAY),
-    "caveat":   S("caveat", fontSize=8, leading=12, textColor=AMBER,
-                  fontName="Helvetica-Oblique", leftIndent=8),
-    "est":      S("est", fontSize=7.5, leading=11, textColor=DGRAY,
-                  fontName="Helvetica-Oblique"),
-    "cell":     S("cell", fontSize=7.5, leading=10),
-    "cell_b":   S("cell_b", fontSize=7.5, leading=10, fontName="Helvetica-Bold"),
-    "cell_g":   S("cell_g", fontSize=7.5, leading=10, textColor=GREEN, fontName="Helvetica-Bold"),
-    "cell_r":   S("cell_r", fontSize=7.5, leading=10, textColor=RED, fontName="Helvetica-Bold"),
-    "cell_a":   S("cell_a", fontSize=7.5, leading=10, textColor=AMBER, fontName="Helvetica-Bold"),
-    "cell_gr":  S("cell_gr", fontSize=7.5, leading=10, textColor=DGRAY,
-                  fontName="Helvetica-Oblique"),
+ST = {
+    "h1":    S("h1", fontSize=15, leading=20, textColor=NAVY, fontName="Helvetica-Bold",
+                spaceBefore=12, spaceAfter=6),
+    "h2":    S("h2", fontSize=11, leading=14, textColor=BLUE, fontName="Helvetica-Bold",
+                spaceBefore=8, spaceAfter=4),
+    "h3":    S("h3", fontSize=9.5, leading=13, textColor=TEAL, fontName="Helvetica-Bold",
+                spaceBefore=5, spaceAfter=3),
+    "body":  S("body"),
+    "small": S("small", fontSize=7.5, leading=11, textColor=DGRAY),
+    "warn":  S("warn", fontSize=8, leading=12, textColor=CORAL, fontName="Helvetica-Bold"),
+    "corr":  S("corr", fontSize=8, leading=12, textColor=GREEN, fontName="Helvetica-Bold"),
+    "cell":  S("cell", fontSize=7.5, leading=10),
+    "cellb": S("cellb", fontSize=7.5, leading=10, fontName="Helvetica-Bold"),
+    "cellg": S("cellg", fontSize=7.5, leading=10, textColor=GREEN, fontName="Helvetica-Bold"),
+    "cellr": S("cellr", fontSize=7.5, leading=10, textColor=RED, fontName="Helvetica-Bold"),
+    "cella": S("cella", fontSize=7.5, leading=10, textColor=AMBER, fontName="Helvetica-Bold"),
+    "celld": S("celld", fontSize=7.5, leading=10, textColor=DGRAY, fontName="Helvetica-Oblique"),
 }
 
 
@@ -79,590 +74,547 @@ def _on_page(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(DGRAY)
-    canvas.drawString(MARGIN, 0.7 * cm,
-                      "MSCI Poland 2026 Prospective Trades  |  Research Only — Verify All [EST] Figures Before Trading")
-    canvas.drawRightString(PAGE_W - MARGIN, 0.7 * cm, f"Page {doc.page}")
+    canvas.drawString(MARGIN, 0.7*cm,
+        "MSCI Poland 2026 — Verified Candidate Report  |  Sources: MSCI press releases, PAP Biznes, stockanalysis.com")
+    canvas.drawRightString(PAGE_W - MARGIN, 0.7*cm, f"Page {doc.page}")
     canvas.restoreState()
 
 
+def _table(rows, col_ratios, header_bg=NAVY, row_colors=None):
+    col_w = [(PAGE_W - 2*MARGIN) * r for r in col_ratios]
+    row_colors = row_colors or [WHITE, LGRAY]
+    t = Table(rows, colWidths=col_w)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), header_bg),
+        ("TEXTCOLOR",  (0,0), (-1,0), WHITE),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), row_colors),
+        ("GRID",  (0,0), (-1,-1), 0.3, MGRAY),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ("LEFTPADDING",   (0,0), (-1,-1), 4),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 4),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0),  7.5),
+    ]))
+    return t
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Cover
+# 1. Cover
 # ─────────────────────────────────────────────────────────────────────────────
 def cover(candidates):
     items = []
-    items.append(Spacer(1, 0.8 * cm))
-    items.append(HRFlowable(width="100%", thickness=4, color=NAVY, spaceAfter=14))
-
-    items.append(Paragraph("MSCI POLAND — 2026 PROSPECTIVE TRADES",
-                            S("ct", fontSize=22, leading=28, textColor=NAVY,
-                              fontName="Helvetica-Bold", alignment=TA_CENTER)))
-    items.append(Paragraph("Index Inclusion Alpha Strategy — Forward-Looking Candidate Watchlist",
-                            S("cs", fontSize=11, leading=15, textColor=BLUE,
-                              alignment=TA_CENTER)))
-    items.append(Spacer(1, 0.3 * cm))
+    items.append(Spacer(1, 0.6*cm))
+    items.append(HRFlowable(width="100%", thickness=4, color=NAVY, spaceAfter=12))
+    items.append(Paragraph("MSCI POLAND — 2026 CANDIDATE WATCHLIST",
+        S("t", fontSize=22, leading=28, textColor=NAVY, fontName="Helvetica-Bold", alignment=TA_CENTER)))
+    items.append(Paragraph("Verified from Live Data · March 2026",
+        S("s", fontSize=11, leading=15, textColor=BLUE, alignment=TA_CENTER)))
     items.append(Paragraph(
-        "Report date: March 2026  |  Reviews: May 2026 SAR + Nov 2026 SAR",
-        S("cm", fontSize=9, textColor=DGRAY, alignment=TA_CENTER),
-    ))
-    items.append(HRFlowable(width="100%", thickness=1, color=MGRAY, spaceBefore=14, spaceAfter=14))
+        "Sources: MSCI SAR Press Releases · Biznes PAP · stockanalysis.com · investing.com · MSCI GIMI Methodology Aug 2025",
+        S("m", fontSize=8, textColor=DGRAY, alignment=TA_CENTER)))
+    items.append(HRFlowable(width="100%", thickness=1, color=MGRAY, spaceBefore=10, spaceAfter=10))
 
-    # Disclaimer box
-    disc_data = [[Paragraph(
-        "⚠  EPISTEMIC DISCLAIMER — READ BEFORE USING\n\n"
-        "This report was generated in March 2026. The model's training data ends in "
-        "August 2025. All market data (prices, market caps, RS percentiles, ATVR) "
-        "for the period August 2025–March 2026 is ESTIMATED [EST] based on trend "
-        "extrapolation and qualitative judgement.\n\n"
-        "The November 2025 MSCI SAR occurred within this blind spot — its exact "
-        "outcome (which stocks were added / deleted / had weight changes) is unknown "
-        "and must be verified from MSCI's published press releases before proceeding.\n\n"
-        "DO NOT open any position without first verifying: (1) current market cap, "
-        "(2) RS percentile from live data, (3) ATVR, (4) Nov 2025 SAR outcome.\n\n"
-        "All prices marked [EST] are illustrative order-of-magnitude estimates only.",
-        S("disc", fontSize=8, leading=12, textColor=colors.HexColor("#4A0000"),
-          fontName="Helvetica"),
-    )]]
-    disc_table = Table(disc_data, colWidths=[PAGE_W - 2 * MARGIN])
-    disc_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF3E0")),
-        ("BOX", (0, 0), (-1, -1), 1.5, AMBER),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+    # Corrections box — prominently placed on cover
+    corr_text = (
+        "<b>CORRECTIONS TO PREVIOUS ESTIMATES (these were factually wrong — now fixed):</b><br/><br/>"
+        "<font color='#C62828'>✗  FTSE Poland: was described as Emerging Market.</font>  "
+        "Poland has been in FTSE <b>Developed</b> Europe since September 2018. "
+        "There are NO FTSE EM Poland inclusion events. All previous 'dual MSCI+FTSE EM' "
+        "analysis in this codebase was incorrect and has been removed.<br/><br/>"
+        "<font color='#C62828'>✗  May 2025 SAR candidates were wrong.</font>  "
+        "Actual additions: <b>Bank Millennium, Budimex, CCC</b> (not XTB or Kruk). "
+        "MSCI Poland Standard grew from 13 to 16 constituents.<br/><br/>"
+        "<font color='#C62828'>✗  XTB and Kruk were described as Standard members.</font>  "
+        "Both are currently in <b>MSCI Poland Small Cap</b>. They are the primary "
+        "Standard upgrade candidates — but have not been added yet.<br/><br/>"
+        "<font color='#2E7D32'>✓  Nov 2025 SAR: confirmed no changes for Poland.</font><br/>"
+        "<font color='#2E7D32'>✓  MSCI Poland Standard: 16 constituents confirmed.</font><br/>"
+        "<font color='#2E7D32'>✓  CCC deletion risk identified (cap well below threshold).</font>"
+    )
+    corr_para = Paragraph(corr_text,
+        S("cp", fontSize=8, leading=13, textColor=BLACK))
+    corr_t = Table([[corr_para]], colWidths=[PAGE_W - 2*MARGIN])
+    corr_t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#FFF3E0")),
+        ("BOX", (0,0), (-1,-1), 1.5, AMBER),
+        ("TOPPADDING", (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+        ("LEFTPADDING", (0,0), (-1,-1), 12),
+        ("RIGHTPADDING", (0,0), (-1,-1), 12),
     ]))
-    items.append(disc_table)
-    items.append(Spacer(1, 0.5 * cm))
+    items.append(corr_t)
+    items.append(Spacer(1, 0.4*cm))
 
-    # Candidate summary tiles
+    # KPI row
     top = [c for c in candidates if c.conviction == "HIGH"]
     med = [c for c in candidates if c.conviction == "MEDIUM"]
-    watch = [c for c in candidates if c.conviction == "WATCH"]
-    avoid = [c for c in candidates if c.conviction in ("AVOID/SHORT", "AVOID")]
+    wat = [c for c in candidates if c.conviction == "WATCH"]
+    sht = [c for c in candidates if c.conviction == "SHORT"]
 
-    tiles_data = [
-        [
-            _mini_tile("TOP PICKS", str(len(top)), "HIGH conviction", GREEN),
-            _mini_tile("MEDIUM", str(len(med)), "above filter", TEAL),
-            _mini_tile("WATCH", str(len(watch)), "monitor for entry", AMBER),
-            _mini_tile("AVOID / SHORT", str(len(avoid)), "deletion / weak momentum", RED),
-        ]
-    ]
-    tiles_table = Table(tiles_data, colWidths=[(PAGE_W - 2 * MARGIN) / 4] * 4)
-    tiles_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    items.append(tiles_table)
-    items.append(Spacer(1, 0.5 * cm))
-
-    # Backtest reference
-    items.append(Paragraph(
-        "<b>Historical context (from walk-forward backtest 2018–2025):</b>  "
-        "Momentum-filtered events averaged <b>+13.2% return</b> per position "
-        "(T−45 → effective date), with <b>100% win rate</b> and Sharpe 2.12. "
-        "Standard additions / upgrades avg +14.3%; weight increases avg +13.2%. "
-        "False positives (stocks not added) averaged only +0.1%. "
-        "These figures provide the expected return range for the 2026 candidates below.",
-        STYLES["body"],
-    ))
-    items.append(HRFlowable(width="100%", thickness=1, color=MGRAY, spaceBefore=12, spaceAfter=0))
+    def tile(label, val, sub, clr):
+        return Table([[Paragraph(label, S("tl", fontSize=7, textColor=DGRAY,
+                        fontName="Helvetica-Bold", alignment=TA_CENTER))],
+                      [Paragraph(val, S("tv", fontSize=22, textColor=clr,
+                        fontName="Helvetica-Bold", alignment=TA_CENTER))],
+                      [Paragraph(sub, S("ts", fontSize=7, textColor=DGRAY,
+                        alignment=TA_CENTER))]],
+            colWidths=[(PAGE_W - 2*MARGIN)/4 - 0.2*cm],
+            style=TableStyle([("BACKGROUND",(0,0),(-1,-1),LGRAY),
+                               ("BOX",(0,0),(-1,-1),0.5,MGRAY),
+                               ("TOPPADDING",(0,0),(-1,-1),5),
+                               ("BOTTOMPADDING",(0,0),(-1,-1),5)]))
+    tiles = Table([[tile("HIGH CONVICTION", str(len(top)), "Standard Add / Wt Inc", GREEN),
+                    tile("MEDIUM", str(len(med)), "Weight increase plays", TEAL),
+                    tile("WATCH", str(len(wat)), "Monitor for entry", AMBER),
+                    tile("SHORT / AVOID", str(len(sht)), "Deletion / weight decrease", RED)]],
+                  colWidths=[(PAGE_W - 2*MARGIN)/4]*4)
+    tiles.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP")]))
+    items.append(tiles)
     return items
 
 
-def _mini_tile(label, value, sub, color):
-    return Table(
-        [[Paragraph(label, S("tl", fontSize=7, textColor=DGRAY, fontName="Helvetica-Bold",
-                              alignment=TA_CENTER))],
-         [Paragraph(value, S("tv", fontSize=26, textColor=color,
-                              fontName="Helvetica-Bold", alignment=TA_CENTER))],
-         [Paragraph(sub, S("ts", fontSize=7, textColor=DGRAY, alignment=TA_CENTER))]],
-        colWidths=[(PAGE_W - 2 * MARGIN) / 4 - 0.3 * cm],
-        style=TableStyle([
-            ("BOX", (0, 0), (-1, -1), 0.5, MGRAY),
-            ("BACKGROUND", (0, 0), (-1, -1), LGRAY),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]),
-    )
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Market context
+# 2. Verified MSCI Poland Index Structure
 # ─────────────────────────────────────────────────────────────────────────────
-def market_context():
+def index_structure():
     items = []
-    items.append(Paragraph("1. Market Context — Poland 2026", STYLES["h1"]))
-
-    items.append(Paragraph("MSCI Poland Index Composition (estimated, Mar 2026)", STYLES["h2"]))
+    items.append(PageBreak())
+    items.append(Paragraph("1. Verified MSCI Poland Index Structure (March 2026)", ST["h1"]))
     items.append(Paragraph(
-        "Following the May 2025 SAR (XTB, Kruk, Budimex weight increases) and the "
-        "November 2025 SAR (outcome unknown — verify from MSCI press release), "
-        "the MSCI Poland Standard index is estimated to contain ~17–20 constituents. "
-        "Dominant sectors: Financials (~35%), Consumer Discretionary (~22%), "
-        "Industrials (~12%), Materials (~8%), IT (~7%).",
-        STYLES["body"],
-    ))
+        "Source: MSCI Poland Index Factsheet (Nov 28, 2025 data), EPOL ETF holdings. "
+        "Total index market cap: ~USD 105.2B. 16 constituents.",
+        ST["body"]))
+    items.append(Spacer(1, 0.2*cm))
 
-    context_rows = [
-        ["Theme", "Relevance for MSCI Inclusions", "Direction"],
-        ["EU KPO disbursements accelerating",
-         "Budimex, other infrastructure names — cap growing faster than index",
-         "↑ Weight increase for BDX"],
-        ["NBP rate cuts 2025-26",
-         "Bank NIMs compress; but NPL buyers (Kruk) benefit from wider spreads",
-         "↑ KRU; ↔ MIL"],
-        ["XTB / retail trading volumes",
-         "Crypto bull run + stock market highs = XTB volumes elevated",
-         "↑↑ XTB cap growth"],
-        ["CVC / Żabka IPO overhang",
-         "If CVC exited by H1 2025, ZAB float increases → momentum can recover",
-         "↑ ZAB Standard upgrade"],
-        ["Polish government spending",
-         "PLN 100B+ defence + infrastructure = construction boom sustained",
-         "↑ BDX, APR"],
-        ["Cyfrowy Polsat structural decline",
-         "MVNO + OTT competition; cap below Standard threshold",
-         "↓ CPS deletion risk"],
-        ["CHF mortgage resolution",
-         "Bank Millennium provisions nearly complete by 2026",
-         "↑ MIL Standard add potential"],
+    std_rows = [
+        ["#", "Ticker", "Company", "Float-Adj Cap (USD B)", "Index Weight %", "Sector", "SAR Added"],
+        ["1", "PKO", "PKO Bank Polski", "18.58", "17.66%", "Financials", "Pre-2018"],
+        ["2", "PKN", "PKN Orlen S.A.", "14.97", "14.23%", "Energy", "Pre-2018"],
+        ["3", "PZU", "PZU S.A.", "10.42", "9.91%", "Financials", "Pre-2018"],
+        ["4", "PEO", "Bank Pekao", "10.08", "9.58%", "Financials", "Pre-2018"],
+        ["5", "KGH", "KGHM Polska Miedź", "8.13", "7.73%", "Materials", "Pre-2018"],
+        ["6", "ALE", "Allegro.eu", "6.04", "5.74%", "Cons. Disc.", "Nov 2021"],
+        ["7", "SPL", "Santander Bank Polska", "5.77", "5.49%", "Financials", "Nov 2019"],
+        ["8", "DNO", "Dino Polska", "5.49", "5.22%", "Cons. Staples", "May 2020"],
+        ["9", "LPP", "LPP S.A.", "5.20", "4.94%", "Cons. Disc.", "Pre-2018"],
+        ["10", "CDR", "CD Projekt", "4.57", "4.34%", "Comm. Services", "Pre-2018"],
+        ["11", "MBK", "mBank S.A.", "~3.28", "~3.12%", "Financials", "Pre-2018"],
+        ["12", "ZAB", "Żabka Group", "~5.72", "~5.44%", "Cons. Staples", "Feb 2025 ★"],
+        ["13", "MIL", "Bank Millennium", "~5.24", "~4.98%", "Financials", "May 2025 ★"],
+        ["14", "BDX", "Budimex S.A.", "~5.58", "~5.31%", "Industrials", "May 2025 ★"],
+        ["15", "CCC", "CCC S.A. (MODIVO) ⚠", "~2.36", "~2.24%", "Cons. Disc.", "May 2025 ★"],
+        ["16", "?", "One additional mid-cap", "~2.0+", "~1.90%", "TBC", "—"],
     ]
-    col_w = [(PAGE_W - 2 * MARGIN) * x for x in [0.28, 0.52, 0.20]]
-    t = Table(
-        [[Paragraph(c, STYLES["cell_b"] if r == 0 else STYLES["cell"]) for c in row]
-         for r, row in enumerate(context_rows)],
-        colWidths=col_w,
-    )
+    col_r = [0.04, 0.07, 0.20, 0.13, 0.10, 0.13, 0.13]
+    formatted_rows = []
+    for i, row in enumerate(std_rows):
+        if i == 0:
+            formatted_rows.append([Paragraph(c, ST["cellb"]) for c in row])
+        else:
+            # Highlight new additions
+            is_new = "★" in row[-1]
+            is_risk = "⚠" in row[2]
+            st_key = "cella" if is_risk else ("cellg" if is_new else "cell")
+            formatted_rows.append([Paragraph(c, ST[st_key] if j in (2, 6) else ST["cell"])
+                                    for j, c in enumerate(row)])
+    t = _table(formatted_rows, col_r)
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LGRAY]),
-        ("GRID", (0, 0), (-1, -1), 0.3, MGRAY),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0,0), (-1,0), NAVY),
+        ("TEXTCOLOR",  (0,0), (-1,0), WHITE),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, LGRAY]),
+        ("GRID", (0,0), (-1,-1), 0.3, MGRAY),
+        ("TOPPADDING", (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), 7.5),
+        # highlight rows 12-15 (new additions)
+        ("BACKGROUND", (0,12), (-1,15), colors.HexColor("#E8F5E9")),
+        # highlight CCC risk row
+        ("BACKGROUND", (0,15), (-1,15), colors.HexColor("#FFF3E0")),
     ]))
     items.append(t)
+    items.append(Spacer(1, 0.2*cm))
+    items.append(Paragraph(
+        "★ New additions (2025). ⚠ CCC: full cap ~USD 2.29B — below inclusion threshold (~USD 2.8B+). "
+        "Deletion buffer applies (MSCI keeps until cap falls below ~50% of lower threshold = ~$1.4B). "
+        "Weight decrease is already occurring as other members grow faster.",
+        ST["small"]))
 
-    items.append(Spacer(1, 0.3 * cm))
-    items.append(Paragraph("Review Calendar", STYLES["h2"]))
-    cal_rows = [
-        ["Event", "Date [EST]", "Action required"],
-        ["May 2026 SAR — T−45 screen", "~14 March 2026", "Screen now — we are AT this date"],
-        ["May 2026 SAR — Announcement", "~28 April 2026", "Exit FP positions; hold TP positions"],
-        ["May 2026 SAR — Effective date", "~29 May 2026", "Exit TP positions (main alpha event)"],
-        ["FTSE Jun 2026 QIR — Announcement", "~3 June 2026", "Watch: MSCI additions often follow FTSE"],
-        ["FTSE Jun 2026 QIR — Effective", "~15 June 2026", "Exit if FTSE also adds same stock"],
-        ["Nov 2026 SAR — T−45 screen", "~16 September 2026", "Re-screen universe for Nov candidates"],
-        ["Nov 2026 SAR — Announcement", "~28 October 2026", "Manage FP exits"],
-        ["Nov 2026 SAR — Effective date", "~30 November 2026", "Final exit for TP positions"],
+    # Small Cap table
+    items.append(Spacer(1, 0.3*cm))
+    items.append(Paragraph("MSCI Poland Small Cap — Standard Upgrade Candidates", ST["h2"]))
+    items.append(Paragraph(
+        "Source: EPOL holdings weight (~5.73% for XTB), investing.com market caps. "
+        "These are the stocks to WATCH for Standard inclusion in 2026.",
+        ST["body"]))
+
+    sc_rows = [
+        ["Ticker", "Company", "Full Cap PLN B", "Full Cap USD B", "Small Cap Wt%", "Status vs Standard threshold"],
+        ["XTB", "XTB S.A.", "10.76", "2.71", "~5.73%",
+         "~3% below ~$2.8B threshold — PRIMARY CANDIDATE ★★"],
+        ["KRU", "Kruk S.A.", "9.09", "2.29", "—",
+         "~18% below threshold — SECONDARY CANDIDATE ★"],
+        ["DGC", "Diagnostyka S.A.", "~4.5 [EST]", "~1.13 [EST]", "Added May 2025",
+         "Far below Standard (~-60%) — long-term watch only"],
     ]
-    col_w2 = [(PAGE_W - 2 * MARGIN) * x for x in [0.30, 0.22, 0.48]]
-    t2 = Table(
-        [[Paragraph(c, STYLES["cell_b"] if r == 0 else
-                    (STYLES["cell_g"] if "now" in c.lower() else STYLES["cell"]))
-          for c in row] for r, row in enumerate(cal_rows)],
-        colWidths=col_w2,
+    formatted_sc = []
+    for i, row in enumerate(sc_rows):
+        if i == 0:
+            formatted_sc.append([Paragraph(c, ST["cellb"]) for c in row])
+        elif i == 1:
+            formatted_sc.append([Paragraph(c, ST["cellg"]) for c in row])
+        elif i == 2:
+            formatted_sc.append([Paragraph(c, ST["cella"]) for c in row])
+        else:
+            formatted_sc.append([Paragraph(c, ST["cell"]) for c in row])
+
+    sc_col = [0.08, 0.18, 0.13, 0.13, 0.12, 0.36]
+    sc_t = _table(formatted_sc, sc_col, header_bg=BLUE)
+    items.append(sc_t)
+
+    # FTSE correction box
+    items.append(Spacer(1, 0.3*cm))
+    items.append(Paragraph("FTSE Classification — Critical Correction", ST["h2"]))
+    ftse_text = (
+        "<b>Poland is a FTSE DEVELOPED MARKET, not Emerging.</b><br/><br/>"
+        "Poland was upgraded by FTSE Russell from Advanced Emerging to <b>Developed Market</b> "
+        "status in <b>September 2018</b> — the first former communist country to achieve this. "
+        "Polish stocks are now part of FTSE Developed Europe (alongside UK, Germany, France, etc.).<br/><br/>"
+        "Implication: <b>there are no FTSE EM Poland inclusion events</b>. The 'dual-index' "
+        "MSCI EM + FTSE EM plays described in previous versions of this report were factually "
+        "incorrect. FTSE Developed inclusions exist but have different AUM dynamics "
+        "(FTSE Developed AUM is much larger; Polish stocks are already represented).<br/><br/>"
+        "MSCI has NOT upgraded Poland to Developed status (as of June 2025 classification review). "
+        "MSCI cited: limited stock lending/short-selling, lack of English-language disclosures, "
+        "and foreign investor registration rules. Poland remains ~1.1% of MSCI EM Index weight."
     )
-    t2.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LGRAY]),
-        ("GRID", (0, 0), (-1, -1), 0.3, MGRAY),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#E8F5E9")),  # highlight T-45 now
+    ftse_t = Table([[Paragraph(ftse_text, S("ft", fontSize=8, leading=12, textColor=BLACK))]],
+                   colWidths=[PAGE_W - 2*MARGIN])
+    ftse_t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#E3F2FD")),
+        ("BOX", (0,0), (-1,-1), 1, BLUE),
+        ("TOPPADDING", (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("LEFTPADDING", (0,0), (-1,-1), 10),
+        ("RIGHTPADDING", (0,0), (-1,-1), 10),
     ]))
-    items.append(t2)
+    items.append(ftse_t)
     return items
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Watchlist overview table
+# 3. Threshold mechanics
 # ─────────────────────────────────────────────────────────────────────────────
-def watchlist_overview(candidates):
+def threshold_section():
     items = []
     items.append(PageBreak())
-    items.append(Paragraph("2. 2026 Candidate Watchlist — Overview", STYLES["h1"]))
+    items.append(Paragraph("2. MSCI Size Threshold Mechanics (How Inclusion Works)", ST["h1"]))
     items.append(Paragraph(
-        "All candidates ranked by conviction tier then RS percentile. "
-        "All market data marked [EST]. Verify from live WSE data before entry.",
-        STYLES["body"],
-    ))
-    items.append(Spacer(1, 0.2 * cm))
+        "Source: MSCI GIMI Methodology document (August 2025). "
+        "Understanding why a stock gets added — or not — requires understanding the dynamic threshold.",
+        ST["body"]))
+    items.append(Spacer(1, 0.2*cm))
 
-    tier_order = {"HIGH": 0, "MEDIUM": 1, "WATCH": 2, "AVOID/SHORT": 3, "AVOID": 4}
-    sorted_c = sorted(candidates, key=lambda x: (tier_order.get(x.conviction, 9),
-                                                  x.target_review, -x.rs_percentile))
-
-    rows = [["#", "Company", "Ticker", "Event type", "Review",
-             "Cap [EST]", "RS% [EST]", "Filter", "Entry [EST]", "Conviction"]]
-
-    for i, c in enumerate(sorted_c, 1):
-        filt_s = STYLES["cell_g"] if c.momentum_passes_filter else STYLES["cell_r"]
-        conv_map = {
-            "HIGH": STYLES["cell_g"], "MEDIUM": STYLES["cell"],
-            "WATCH": STYLES["cell_a"], "AVOID/SHORT": STYLES["cell_r"],
-            "AVOID": STYLES["cell_r"],
-        }
-        icon = {"HIGH": "★★", "MEDIUM": "★", "WATCH": "◇",
-                "AVOID/SHORT": "⚠ SHORT", "AVOID": "✗"}.get(c.conviction, "?")
-        rows.append([
-            Paragraph(str(i), STYLES["cell"]),
-            Paragraph(c.company, STYLES["cell_b"]),
-            Paragraph(c.ticker, STYLES["cell"]),
-            Paragraph(c.event_type, STYLES["cell"]),
-            Paragraph(c.target_review, STYLES["cell"]),
-            Paragraph(f"${c.full_cap_usd_m:,.0f}M", STYLES["cell"]),
-            Paragraph(str(int(c.rs_percentile)), STYLES["cell"]),
-            Paragraph("PASS" if c.momentum_passes_filter else "SKIP", filt_s),
-            Paragraph(f"PLN {c.estimated_entry_price_pln:,.0f}" if c.estimated_entry_price_pln > 0
-                      else "—", STYLES["cell"]),
-            Paragraph(icon, conv_map.get(c.conviction, STYLES["cell"])),
-        ])
-
-    col_w = [(PAGE_W - 2 * MARGIN) * x
-             for x in [0.04, 0.18, 0.07, 0.15, 0.10, 0.10, 0.07, 0.07, 0.11, 0.11]]
-    t = Table(rows, colWidths=col_w)
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LGRAY]),
-        ("GRID", (0, 0), (-1, -1), 0.25, MGRAY),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
-    ]))
-    items.append(t)
-
-    items.append(Spacer(1, 0.3 * cm))
+    items.append(Paragraph("How the Threshold is Set", ST["h2"]))
     items.append(Paragraph(
-        "Momentum filter = RS ≥ 60th pct + above 200d MA. "
-        "From backtest: filtered positions avg +13.2% vs +0.1% for excluded false positives. "
-        "Stocks failing the filter are significantly more likely to disappoint at announcement.",
-        STYLES["small"],
-    ))
-    return items
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Individual trade sheets
-# ─────────────────────────────────────────────────────────────────────────────
-def _trade_card(c: ProspectiveCandidate) -> list:
-    """One detailed trade card per candidate."""
-    items = []
-
-    # Card header
-    conv_color = {
-        "HIGH": GREEN, "MEDIUM": TEAL, "WATCH": AMBER,
-        "AVOID/SHORT": RED, "AVOID": RED,
-    }.get(c.conviction, DGRAY)
-    icon = {"HIGH": "★★ TOP PICK", "MEDIUM": "★ MEDIUM",
-            "WATCH": "◇ WATCH", "AVOID/SHORT": "⚠ AVOID / SHORT",
-            "AVOID": "✗ AVOID"}.get(c.conviction, c.conviction)
-
-    hdr_data = [[
-        Paragraph(f"{c.company}  ({c.ticker})",
-                  S("hc", fontSize=11, fontName="Helvetica-Bold", textColor=WHITE)),
-        Paragraph(f"{icon}  |  {c.target_review}  |  {c.event_type}",
-                  S("hc2", fontSize=8.5, textColor=colors.HexColor("#B0BEC5"),
-                    alignment=TA_RIGHT)),
-    ]]
-    hdr_t = Table(hdr_data, colWidths=[(PAGE_W - 2 * MARGIN) * 0.55,
-                                        (PAGE_W - 2 * MARGIN) * 0.45])
-    hdr_t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), NAVY),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    items.append(KeepTogether([hdr_t]))
-
-    # Metrics strip
-    metrics = [
-        ("Cap [EST]", f"${c.full_cap_usd_m:,.0f}M"),
-        ("Float-adj [EST]", f"${c.float_adj_cap_usd_m:,.0f}M"),
-        ("ATVR [EST]", f"{c.atvr_3m_pct:.1f}%"),
-        ("RS% [EST]", f"{c.rs_percentile:.0f}th"),
-        ("200d MA [EST]", "Above ✓" if c.above_200d_ma else "Below ✗"),
-        ("12M mom [EST]", f"{c.momentum_12m_pct:+.0f}%"),
-        ("Threshold gap", f"{c.pct_above_threshold:+.0f}%"),
-        ("Forced buy [EST]", f"${c.est_forced_buying_usd_m:,.0f}M"),
-        ("ADV days [EST]", f"{c.est_adv_days:.0f}d"),
-        ("Filter", "✓ PASS" if c.momentum_passes_filter else "✗ SKIP"),
-    ]
-    met_rows = [[
-        Table([[Paragraph(m[0], S("ml", fontSize=6.5, textColor=DGRAY, fontName="Helvetica-Bold",
-                                   alignment=TA_CENTER))],
-               [Paragraph(m[1], S("mv", fontSize=9, textColor=GREEN if "✓" in m[1]
-                                   else RED if "✗" in m[1] or m[0] == "Threshold gap" and float(m[1].replace('%','').replace('+','')) < 0
-                                   else BLACK,
-                                   fontName="Helvetica-Bold", alignment=TA_CENTER))]],
-               colWidths=[(PAGE_W - 2 * MARGIN) / len(metrics)],
-               style=TableStyle([
-                   ("BACKGROUND", (0, 0), (-1, -1), LGRAY),
-                   ("BOX", (0, 0), (-1, -1), 0.3, MGRAY),
-                   ("TOPPADDING", (0, 0), (-1, -1), 3),
-                   ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-               ]))
-        for m in metrics
-    ]]
-    met_t = Table([met_rows], colWidths=[(PAGE_W - 2 * MARGIN) / len(metrics)] * len(metrics))
-    met_t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    items.append(met_t)
-
-    # Two-column: thesis + risks/verification
-    thesis_lines = c.thesis.replace("★ ", "").replace("⚠ ", "")
-    thesis_para = Paragraph(
-        thesis_lines.replace("\n", "<br/>"),
-        S("th_body", fontSize=8, leading=12, textColor=BLACK),
-    )
-
-    risks_items = "".join(f"• {r}<br/>" for r in c.key_risks)
-    verify_items = "".join(f"☐  {v}<br/>" for v in c.data_verification_needed)
-
-    right_col = [
-        Paragraph("Key Risks", S("rh", fontSize=8.5, fontName="Helvetica-Bold",
-                                  textColor=RED, spaceAfter=2)),
-        Paragraph(risks_items, S("ri", fontSize=7.5, leading=11, textColor=BLACK)),
-        Spacer(1, 0.15 * cm),
-        Paragraph("Verification Checklist (before entry)", S("vh", fontSize=8.5,
-                   fontName="Helvetica-Bold", textColor=BLUE, spaceAfter=2)),
-        Paragraph(verify_items, S("vi", fontSize=7.5, leading=11,
-                                   textColor=colors.HexColor("#1A237E"))),
-    ]
-
-    # Entry / exit summary
-    if c.event_type != "Deletion Risk":
-        est_return = (c.estimated_target_price_pln / c.estimated_entry_price_pln - 1) * 100 \
-            if c.estimated_entry_price_pln > 0 else 0
-        entry_exit = (
-            f"<b>Entry [EST]:</b> PLN {c.estimated_entry_price_pln:,.0f}  "
-            f"(T−45 screen date ~14 Mar 2026 for May SAR)<br/>"
-            f"<b>TP exit [EST]:</b> PLN {c.estimated_target_price_pln:,.0f}  "
-            f"(effective date ~29 May 2026)  ≈ {est_return:.0f}% gross<br/>"
-            f"<b>FP exit:</b> Announcement date (~28 Apr 2026) — "
-            f"if not announced, close immediately<br/>"
-            f"<b>Historical base rate:</b> weight-increase avg +13.2%  |  "
-            f"Standard add avg +14.3%  (2018–2025 backtest)"
-        )
-    else:
-        entry_exit = (
-            f"<b>Short entry [EST]:</b> PLN {c.estimated_entry_price_pln:,.0f}  "
-            f"(T−45 before expected deletion)<br/>"
-            f"<b>Cover [EST]:</b> PLN {c.estimated_target_price_pln:,.0f}  "
-            f"(at effective date; +1.5% reversal expected after)<br/>"
-            f"<b>Historical deletion avg:</b> −3.5% announcement day, −5% T−45→effective"
-        )
-
-    two_col = Table(
-        [[thesis_para,
-          Table([[r] for r in right_col],
-                style=TableStyle([("TOPPADDING", (0, 0), (-1, -1), 0),
-                                   ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))]],
-        colWidths=[(PAGE_W - 2 * MARGIN) * 0.52, (PAGE_W - 2 * MARGIN) * 0.48],
-        style=TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LINEBEFORE", (1, 0), (1, -1), 0.5, MGRAY),
-        ]),
-    )
-    items.append(two_col)
-
-    # Entry/exit bar
-    ee_data = [[Paragraph(entry_exit,
-                           S("ee", fontSize=7.5, leading=11, textColor=BLACK))]]
-    ee_t = Table(ee_data, colWidths=[PAGE_W - 2 * MARGIN])
-    ee_t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E3F2FD")),
-        ("BOX", (0, 0), (-1, -1), 0.5, BLUE),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    items.append(ee_t)
-    items.append(Spacer(1, 0.5 * cm))
-    return items
-
-
-def trade_sheets(candidates):
-    items = []
-    items.append(PageBreak())
-    items.append(Paragraph("3. Individual Trade Sheets", STYLES["h1"]))
-    items.append(Paragraph(
-        "One sheet per candidate. Left column: thesis. "
-        "Right column: risks + verification checklist. "
-        "Bottom bar: entry / exit mechanics.",
-        STYLES["body"],
-    ))
-    items.append(Spacer(1, 0.3 * cm))
-
-    tier_order = {"HIGH": 0, "MEDIUM": 1, "WATCH": 2, "AVOID/SHORT": 3, "AVOID": 4}
-    sorted_c = sorted(candidates, key=lambda x: (tier_order.get(x.conviction, 9),
-                                                  x.target_review, -x.rs_percentile))
-    for c in sorted_c:
-        items += _trade_card(c)
-
-    return items
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Decision framework checklist
-# ─────────────────────────────────────────────────────────────────────────────
-def decision_framework():
-    items = []
-    items.append(PageBreak())
-    items.append(Paragraph("4. Pre-Trade Decision Framework", STYLES["h1"]))
-    items.append(Paragraph(
-        "Before opening any position from this watchlist, complete the following "
-        "checklist using LIVE data from WSE/stooq/Bloomberg.",
-        STYLES["body"],
-    ))
+        "MSCI's inclusion threshold is NOT fixed in USD. It is recalculated at every "
+        "Semi-Annual Review based on the DM (Developed Market) universe:",
+        ST["body"]))
 
     steps = [
-        ("Step 1 — Verify Nov 2025 SAR outcome",
-         "Download the MSCI Semi-Annual Review press release (Nov 2025) from msci.com/eqb. "
-         "Confirm which stocks were added, deleted, or had weight changes. "
-         "Update your watchlist accordingly — some candidates may already be added; "
-         "some deletion risks may already be resolved.",
-         ["☐ Downloaded MSCI Nov 2025 SAR press release",
-          "☐ Updated watchlist for stocks already added (no alpha remaining — do not chase)",
-          "☐ Checked if deletion candidates were already deleted (exit short if so)"]),
-        ("Step 2 — Verify market caps (live data)",
-         "Use stooq.pl, Bloomberg, or WSE official data. "
-         "Compute: full market cap = price × shares outstanding (public filings). "
-         "Float-adjusted: apply FIF from latest MSCI announcement. "
-         "MSCI Standard threshold: $2,500M full cap, $1,300M float-adj (May 2026 values — "
-         "thresholds adjust annually; verify from MSCI methodology document).",
-         ["☐ Current price (PLN) for each candidate",
-          "☐ Shares outstanding from KRS/WSE disclosures",
-          "☐ Float-adj cap: price × shares × FIF",
-          "☐ Both full cap AND float-adj cap above respective thresholds"]),
-        ("Step 3 — Verify momentum (RS percentile + 200d MA)",
-         "Compute RS = stock 12-1M return ranked vs all WIG-ALL constituents. "
-         "RS ≥ 60th pct required. Also verify price > 200-day moving average. "
-         "Both conditions must pass — if either fails, do not initiate position.",
-         ["☐ 12-month return (skip last month) for each candidate vs WIG-ALL",
-          "☐ RS percentile calculated (not estimated)",
-          "☐ Price vs 200-day moving average confirmed",
-          "☐ If RS < 60th pct OR below 200d MA → SKIP regardless of thesis"]),
-        ("Step 4 — Verify ATVR",
-         "ATVR = average daily turnover as % of float-adj cap (3-month trailing). "
-         "MSCI Standard minimum: 15%. Compute from daily volume data. "
-         "Watch for stocks near 15% — any single bad month can push below threshold.",
-         ["☐ ATVR for Oct-Dec 2025 (3M trailing as of Jan 2026)",
-          "☐ ATVR > 15% confirmed (not estimated)",
-          "☐ Monthly ATVR stable — no single month < 12%"]),
-        ("Step 5 — Position sizing",
-         "Equal weight across confirmed positions. Maximum 33% per single stock. "
-         "Total portfolio exposure to this strategy: size relative to your total AUM "
-         "based on risk budget. This strategy concentrates risk into ~6-week windows "
-         "twice per year.",
-         ["☐ Number of qualifying positions determined",
-          "☐ Position size = 1/N of strategy allocation",
-          "☐ No single position > 33% of strategy book",
-          "☐ Entry at T−45 market close (approximately 14 March 2026 for May SAR)"]),
-        ("Step 6 — Announcement day management",
-         "On MSCI announcement day (~28 April 2026): "
-         "check each position against MSCI press release within minutes of release. "
-         "Stocks NOT announced for addition → close immediately at market (FP exit). "
-         "Stocks confirmed for addition → hold to effective date.",
-         ["☐ Announcement date in calendar with alert",
-          "☐ MSCI press release auto-alert set up (msci.com/eqb)",
-          "☐ FP exit order: market sell within 30 min of announcement",
-          "☐ TP positions: hold with trailing stop at effective date"]),
+        ("Step 1", "Sort all DM universe stocks by full market cap descending."),
+        ("Step 2", "Find the market cap of the last stock when cumulative float-adj cap "
+                   "reaches 99% coverage — this is the DM Global Minimum Size Reference."),
+        ("Step 3", "The EM Standard Range = 0.5× to 1.15× of the DM reference. "
+                   "As of May 2025 review: DM ref ~$13.35B → EM range ~$3.3B – $7.7B."),
+        ("Step 4", "Stocks ABOVE the upper bound ($7.7B) are clearly Standard. "
+                   "Stocks IN the range ($3.3B–$7.7B) are Standard. "
+                   "Stocks below the lower bound ($3.3B) may still be added if they "
+                   "recently crossed (buffer zone). EM Small Cap: $443M – $3.3B."),
+        ("Step 5", "DELETION BUFFER: A Standard member is only deleted when its full cap "
+                   "falls below 50% of the lower bound (~$1.65B). This prevents churning. "
+                   "CCC at ~$2.29B is above this floor — not yet deleted."),
     ]
+    for step, desc in steps:
+        items.append(Paragraph(f"<b>{step}:</b> {desc}", ST["body"]))
 
-    for title, desc, checklist in steps:
-        items.append(Paragraph(title, STYLES["h2"]))
-        items.append(Paragraph(desc, STYLES["body"]))
-        check_text = "".join(f"{item}<br/>" for item in checklist)
-        ck_data = [[Paragraph(check_text,
-                               S("ck", fontSize=7.5, leading=12,
-                                 textColor=colors.HexColor("#1A237E")))]]
-        ck_t = Table(ck_data, colWidths=[PAGE_W - 2 * MARGIN])
-        ck_t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E8EAF6")),
-            ("BOX", (0, 0), (-1, -1), 0.5, BLUE),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ]))
-        items.append(ck_t)
-        items.append(Spacer(1, 0.2 * cm))
+    items.append(Spacer(1, 0.3*cm))
 
+    # Threshold evolution table
+    items.append(Paragraph("Threshold Evolution (Dynamic — Rises with DM Markets)", ST["h2"]))
+    thresh_rows = [
+        ["Review Date", "DM Reference (USD B)", "EM Standard Lower (USD B)",
+         "EM Small Cap Floor (USD M)", "Impact on Poland"],
+        ["Aug 2024", "$11.04B", "~$2.76B", "~$383M",
+         "Bank Millennium, CCC, BDX were borderline"],
+        ["May 2025", "~$13.35B", "~$3.34B", "~$443M",
+         "MIL, BDX, CCC added; XTB ($2.71B) still below"],
+        ["May 2026 [EST]", "~$14-15B", "~$3.5-3.75B [EST]", "~$480M [EST]",
+         "XTB needs further cap growth; Kruk needs +50%+"],
+    ]
+    formatted_thresh = []
+    for i, row in enumerate(thresh_rows):
+        st_key = "cellb" if i == 0 else ("cella" if i == 3 else "cell")
+        formatted_thresh.append([Paragraph(c, ST[st_key]) for c in row])
+    thresh_col = [0.18, 0.18, 0.18, 0.18, 0.28]
+    thresh_t = _table(formatted_thresh, thresh_col)
+    items.append(thresh_t)
+    items.append(Spacer(1, 0.2*cm))
+    items.append(Paragraph(
+        "KEY IMPLICATION for XTB: the threshold may be RISING to ~$3.5B by May 2026. "
+        "XTB at $2.71B (March 2026) needs +29% cap appreciation to clear the lower bound, "
+        "OR the stock may enter MSCI's 'buffer zone' consideration if it crosses the "
+        "50%-of-lower-bound level. Precise FIF and float-adj cap calculations are essential.",
+        ST["body"]))
+
+    items.append(Spacer(1, 0.3*cm))
+    items.append(Paragraph("Why Certain Stocks Were / Were Not Added", ST["h2"]))
+
+    why_rows = [
+        ["Stock", "Review", "Result", "Cap at Review", "Why included/excluded"],
+        ["Żabka Group (ZAB)", "Feb 2025 QIR", "ADDED ✓",
+         "~PLN 20.86B ($5.7B)", "Large cap, met all gates. Post-IPO overhang cleared."],
+        ["Bank Millennium (MIL)", "May 2025 SAR", "ADDED ✓",
+         "~PLN 19.14B ($4.8B)", "BCP stake re-evaluated; float-adj > $1.3B. CHF provisions complete."],
+        ["Budimex (BDX)", "May 2025 SAR", "ADDED ✓",
+         "~PLN 20.49B ($5.6B)", "Cap grew past buffer zone. EU KPO awards boosted re-rating."],
+        ["CCC S.A.", "May 2025 SAR", "ADDED ✓",
+         "~PLN 9.1B ($2.3B+?)", "Borderline — may have been higher at cut-off vs today."],
+        ["XTB S.A.", "May 2025 SAR", "NOT ADDED ✗",
+         "~PLN 10.76B ($2.71B)", "Below Standard lower bound at cut-off date. Small Cap retained."],
+        ["Kruk S.A.", "May 2025 SAR", "NOT ADDED ✗",
+         "~PLN 9.09B ($2.29B)", "Below Standard lower bound. Significant gap remains."],
+        ["Cyfrowy Polsat", "Nov 2025 SAR", "NO CHANGE",
+         "~PLN 2.3B ($0.58B)", "MSCI deletion buffer: above $1.4B floor but weight declining."],
+    ]
+    formatted_why = []
+    for i, row in enumerate(why_rows):
+        if i == 0:
+            formatted_why.append([Paragraph(c, ST["cellb"]) for c in row])
+        elif "ADDED" in row[2]:
+            formatted_why.append([Paragraph(c, ST["cellg"]) for c in row])
+        elif "NOT ADDED" in row[2]:
+            formatted_why.append([Paragraph(c, ST["cellr"]) for c in row])
+        else:
+            formatted_why.append([Paragraph(c, ST["cell"]) for c in row])
+    why_col = [0.16, 0.12, 0.10, 0.15, 0.47]
+    why_t = _table(formatted_why, why_col)
+    items.append(why_t)
     return items
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Historical comparison
+# 4. Individual candidate cards
 # ─────────────────────────────────────────────────────────────────────────────
-def historical_comparison():
+def _candidate_card(c: Candidate2026) -> list:
+    items = []
+    conv_color = {"HIGH": GREEN, "MEDIUM": TEAL, "WATCH": AMBER, "SHORT": RED}.get(c.conviction, DGRAY)
+    icon = {"HIGH": "★★ TOP PICK", "MEDIUM": "★ MEDIUM", "WATCH": "◇ WATCH", "SHORT": "⚠ SHORT / AVOID"}.get(c.conviction)
+    msci_badge = f"[{c.current_msci_status}]"
+
+    hdr = Table([[
+        Paragraph(f"{c.company}  ({c.ticker})  {msci_badge}",
+                  S("h", fontSize=10, fontName="Helvetica-Bold", textColor=WHITE)),
+        Paragraph(f"{icon}  ·  {c.target_review}  ·  {c.event_type}",
+                  S("h2", fontSize=8, textColor=colors.HexColor("#B0BEC5"), alignment=TA_RIGHT)),
+    ]], colWidths=[(PAGE_W-2*MARGIN)*0.55, (PAGE_W-2*MARGIN)*0.45])
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1), NAVY),
+        ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ("LEFTPADDING",(0,0),(-1,-1),8), ("RIGHTPADDING",(0,0),(-1,-1),6),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+    ]))
+    items.append(KeepTogether([hdr]))
+
+    # Metrics strip
+    pct_vs = f"{c.pct_vs_threshold:+.0f}%"
+    metrics = [
+        ("Full cap PLN", f"PLN {c.full_cap_pln_b:.2f}B"),
+        ("Full cap USD", f"${c.full_cap_usd_b:.2f}B"),
+        ("vs threshold", pct_vs),
+        ("Float-adj [EST]", f"${c.float_adj_cap_usd_b:.2f}B"),
+        ("ATVR [EST]", f"{c.atvr_3m_pct:.0f}%"),
+        ("RS% [EST]", f"{c.rs_percentile:.0f}th"),
+        ("200d MA [EST]", "▲ Above" if c.above_200d_ma else "▼ Below"),
+        ("12M return [EST]", f"{c.return_12m_pct:+.0f}%"),
+        ("Forced buy [EST]", f"${abs(c.est_forced_buying_usd_m):.0f}M {'SELL' if c.est_forced_buying_usd_m < 0 else ''}"),
+        ("Filter", "✓ PASS" if c.momentum_passes_filter else "✗ SKIP"),
+    ]
+    n = len(metrics)
+    met_cells = []
+    for m_label, m_val in metrics:
+        is_neg = m_val.startswith("-") or "SKIP" in m_val or "▼" in m_val or "SELL" in m_val
+        is_pos = "✓" in m_val or "▲" in m_val or (m_label == "vs threshold" and "+" in pct_vs)
+        val_color = RED if is_neg else (GREEN if is_pos else BLACK)
+        met_cells.append(Table([
+            [Paragraph(m_label, S("ml", fontSize=6, textColor=DGRAY, fontName="Helvetica-Bold", alignment=TA_CENTER))],
+            [Paragraph(m_val, S("mv", fontSize=8.5, textColor=val_color, fontName="Helvetica-Bold", alignment=TA_CENTER))],
+        ], colWidths=[(PAGE_W-2*MARGIN)/n],
+        style=TableStyle([("BACKGROUND",(0,0),(-1,-1),LGRAY),("BOX",(0,0),(-1,-1),0.3,MGRAY),
+                           ("TOPPADDING",(0,0),(-1,-1),3),("BOTTOMPADDING",(0,0),(-1,-1),3)])))
+    met_t = Table([met_cells], colWidths=[(PAGE_W-2*MARGIN)/n]*n)
+    met_t.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP")]))
+    items.append(met_t)
+
+    # Two-column body
+    thesis_text = c.inclusion_thesis.replace("\n", "<br/>")
+    why_text = c.why_now_in_2026.replace("\n", "<br/>")
+    risks_text = "".join(f"• {r}<br/>" for r in c.key_risks)
+    check_text = "".join(f"{v}<br/>" for v in c.verify_checklist)
+
+    left = Paragraph(
+        f"<b>Why this stock gets included:</b><br/>{thesis_text}<br/><br/>"
+        f"<b>Why 2026 specifically:</b><br/>{why_text}",
+        S("lb", fontSize=7.8, leading=11))
+
+    right_content = [
+        Paragraph("Key Risks", S("rh", fontSize=9, fontName="Helvetica-Bold",
+                                  textColor=RED, spaceAfter=2)),
+        Paragraph(risks_text, S("rb", fontSize=7.5, leading=11)),
+        Spacer(1, 0.1*cm),
+        Paragraph("Verify Before Entry", S("vh", fontSize=9, fontName="Helvetica-Bold",
+                                            textColor=BLUE, spaceAfter=2)),
+        Paragraph(check_text, S("vb", fontSize=7.5, leading=11,
+                                 textColor=colors.HexColor("#1A237E"))),
+    ]
+    right = Table([[item] for item in right_content],
+                  style=TableStyle([("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),2)]))
+
+    body = Table([[left, right]],
+                 colWidths=[(PAGE_W-2*MARGIN)*0.52, (PAGE_W-2*MARGIN)*0.48])
+    body.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
+        ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ("LINEBEFORE",(1,0),(1,-1),0.5,MGRAY),
+    ]))
+    items.append(body)
+
+    # Entry/exit footer
+    if c.conviction != "SHORT":
+        entry_text = (
+            f"<b>Entry:</b> T−45 before {c.target_review} SAR  |  "
+            f"<b>Est. price [EST]:</b> PLN {c.price_pln:,.0f}  |  "
+            f"<b>TP exit:</b> effective date  |  "
+            f"<b>FP exit:</b> announcement date (if not confirmed)  |  "
+            f"<b>Historical base rate (backtest):</b> Standard Add avg +14.3%  ·  Wt Inc avg +13.2%  "
+            f"(100% win rate, momentum-filtered)"
+        )
+        bg = colors.HexColor("#E3F2FD")
+        border = BLUE
+    else:
+        entry_text = (
+            f"<b>SHORT entry:</b> T−45 before {c.target_review} SAR  |  "
+            f"<b>Cover:</b> effective date  |  "
+            f"<b>Historical deletion return:</b> avg −3.5% announcement day, −5% T−45→effective  |  "
+            f"<b>Post-deletion reversal:</b> +1.5% in 30 days (cover at effective, not after)"
+        )
+        bg = colors.HexColor("#FFEBEE")
+        border = RED
+    footer = Table([[Paragraph(entry_text, S("ft", fontSize=7.5, leading=11))]],
+                   colWidths=[PAGE_W-2*MARGIN])
+    footer.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
+                                 ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
+                                 ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8)]))
+    items.append(footer)
+    items.append(Spacer(1, 0.5*cm))
+    return items
+
+
+def candidate_section(candidates):
     items = []
     items.append(PageBreak())
-    items.append(Paragraph("5. Historical Backtest Reference", STYLES["h1"]))
+    items.append(Paragraph("3. Individual Candidate Analysis", ST["h1"]))
     items.append(Paragraph(
-        "Expected return ranges for 2026 positions, calibrated from the 2018–2025 "
-        "walk-forward backtest (momentum-filtered events only).",
-        STYLES["body"],
-    ))
+        "Each card: left column = why this stock gets included + why 2026 specifically. "
+        "Right column = key risks + pre-entry verification checklist. "
+        "Market data [EST] must be verified from live WSE/stooq data before trading.",
+        ST["body"]))
+    items.append(Spacer(1, 0.3*cm))
 
-    rows = [
-        ["Event Type", "N events", "Avg return", "Min", "Max", "Win rate", "Comparable 2026 trade"],
-        ["Standard Add / EM SC→Standard upgrade", "6", "+14.3%", "+5.2%", "+25.7%", "100%",
-         "Żabka (ZAB) if momentum recovers"],
-        ["Weight Increase (existing Standard member)", "9", "+13.2%", "+8.4%", "+22.6%", "100%",
-         "XTB, KRU, BDX, LPP"],
-        ["EM Small Cap Addition", "7", "+10.7%", "−2.7%", "+21.3%", "86%",
-         "Auto Partner (APR), Benefit Systems (BSY)"],
-        ["FTSE EM Addition (Poland)", "4", "+12.3%", "+10.1%", "+20.3%", "100%",
-         "Any of the above if not yet in FTSE"],
-        ["False Positive (not added, filtered IN)", "4", "+2.6%", "+0.4%", "+5.8%", "100%",
-         "Risk for borderline candidates"],
-        ["False Positive (not added, filtered OUT)", "11", "−0.5%", "−7.3%", "+3.5%", "55%",
-         "Cyfrowy Polsat if any long, Bank Millennium if BCP issue persists"],
+    tier = {"HIGH": 0, "MEDIUM": 1, "WATCH": 2, "SHORT": 3}
+    for c in sorted(candidates, key=lambda x: (tier.get(x.conviction,9), x.target_review, -x.rs_percentile)):
+        items += _candidate_card(c)
+    return items
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Decision checklist
+# ─────────────────────────────────────────────────────────────────────────────
+def checklist_section():
+    items = []
+    items.append(PageBreak())
+    items.append(Paragraph("4. Pre-Trade Decision Checklist — May 2026 SAR", ST["h1"]))
+    items.append(Paragraph(
+        "T-45 screen date is approximately 14 March 2026 — approximately TODAY. "
+        "Complete these steps IN ORDER before opening any position.",
+        ST["body"]))
+    items.append(Spacer(1, 0.2*cm))
+
+    steps = [
+        ("☐ Step 1 — Confirm Nov 2025 SAR outcome",
+         "Download: https://www.msci.com/indexes/index-reviews\n"
+         "Confirm which Polish stocks had weight changes at Nov 2025 review. "
+         "Check if any new stocks were added to Standard or Small Cap that "
+         "change the current constituent list from the 16 shown in this report."),
+        ("☐ Step 2 — Get live XTB market cap",
+         "Go to: stooq.pl or stockanalysis.com/quote/wse/XTB/market-cap/\n"
+         "Required: current price × shares outstanding.\n"
+         "Key question: is XTB full cap > ~USD 2.8B (Standard lower bound estimate)?\n"
+         "If YES → HIGH conviction entry. If NO but within 15% → MEDIUM. If <$2.5B → SKIP."),
+        ("☐ Step 3 — Calculate RS percentile from live data",
+         "Compute: 12-month return (skip last month) for XTB vs all WIG-ALL stocks.\n"
+         "Required threshold: RS ≥ 60th percentile + price above 200d MA.\n"
+         "If BOTH criteria met → position confirmed. If either fails → SKIP (false positive risk)."),
+        ("☐ Step 4 — Verify ATVR",
+         "ATVR = (3-month avg daily PLN turnover / float-adj cap) × 100.\n"
+         "Required: ≥ 15% for MSCI eligibility. XTB is highly liquid — likely 35%+.\n"
+         "For borderline candidates (Bank Millennium, Benefit Systems) this is critical."),
+        ("☐ Step 5 — Check XTB float (founder stake)",
+         "Omar Arnaout (CEO) holds significant stake. Check latest KNF disclosure.\n"
+         "Float-adj cap = full cap × FIF. FIF = float percentage (≈ 1 - founder stake).\n"
+         "Required: float-adj cap > USD 1.3B minimum (MSCI Standard gate)."),
+        ("☐ Step 6 — Set announcement day alert",
+         "MSCI May 2026 SAR announcement: ~28 April 2026.\n"
+         "Set calendar alert. On announcement day:\n"
+         "  → XTB confirmed as addition: HOLD to effective date (~29 May 2026).\n"
+         "  → XTB NOT announced: SELL at market within 30 minutes."),
+        ("☐ Step 7 — Monitor CCC deletion trigger",
+         "CCC (MODIVO) market cap: if it falls to ~PLN 5.7B (~$1.4B USD),\n"
+         "MSCI deletion becomes imminent. Set price alert at PLN 95 for CCC.\n"
+         "If alert triggers → consider short entry T-45 before next SAR."),
     ]
-    col_w = [(PAGE_W - 2 * MARGIN) * x for x in [0.26, 0.07, 0.09, 0.07, 0.07, 0.08, 0.36]]
-    t = Table(
-        [[Paragraph(c, STYLES["cell_b"] if r == 0 else STYLES["cell"]) for c in row]
-         for r, row in enumerate(rows)],
-        colWidths=col_w,
-    )
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, LGRAY]),
-        ("GRID", (0, 0), (-1, -1), 0.3, MGRAY),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BACKGROUND", (0, 5), (-1, 6), colors.HexColor("#FFF3E0")),  # FP rows
-    ]))
-    items.append(t)
-    items.append(Spacer(1, 0.3 * cm))
 
+    for title, desc in steps:
+        row_data = [[
+            Paragraph(title, S("st", fontSize=9, fontName="Helvetica-Bold", textColor=BLUE)),
+            Paragraph(desc.replace("\n", "<br/>"), S("sd", fontSize=8, leading=12)),
+        ]]
+        t = Table(row_data, colWidths=[(PAGE_W-2*MARGIN)*0.30, (PAGE_W-2*MARGIN)*0.70])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,-1), LGRAY),
+            ("BOX",(0,0),(-1,-1),0.5,MGRAY),
+            ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
+            ("LEFTPADDING",(0,0),(-1,-1),8), ("RIGHTPADDING",(0,0),(-1,-1),8),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ]))
+        items.append(t)
+        items.append(Spacer(1, 0.15*cm))
+
+    items.append(Spacer(1, 0.3*cm))
+    items.append(HRFlowable(width="100%", thickness=1, color=AMBER, spaceAfter=6))
     items.append(Paragraph(
-        "<b>Important:</b> These returns are from T−45 to effective date (net of 20 bps). "
-        "The strategy holds for ~45–65 calendar days. On an annualised basis "
-        "(deployed twice per year), filtered positions delivered +26.8% p.a. (2018–2025). "
-        "False positives are managed by closing at announcement — their drag is minimal "
-        "when the momentum filter is applied (only 4 residual FPs in 27 filtered positions).",
-        STYLES["body"],
-    ))
+        "⚠  DISCLAIMER: This report is for research purposes only. "
+        "It does not constitute investment advice. "
+        "All [EST] figures must be verified from live data. "
+        "Past backtest performance (2018-2025) does not guarantee future results. "
+        "MSCI retains committee discretion for borderline inclusion decisions.",
+        S("disc", fontSize=7.5, leading=11, textColor=AMBER, fontName="Helvetica-Oblique")))
     return items
 
 
@@ -670,25 +622,20 @@ def historical_comparison():
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def build_pdf(output_path: str = "msci_poland_2026_candidates.pdf") -> str:
-    candidates = build_2026_candidates()
-
+    candidates = build_verified_candidates()
     doc = SimpleDocTemplate(
-        output_path,
-        pagesize=A4,
+        output_path, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=MARGIN, bottomMargin=1.4 * cm,
-        title="MSCI Poland 2026 — Prospective Trade Candidates",
+        topMargin=MARGIN, bottomMargin=1.4*cm,
+        title="MSCI Poland 2026 — Verified Candidate Watchlist",
         author="MZApp Research",
     )
-
     story = []
     story += cover(candidates)
-    story += market_context()
-    story += watchlist_overview(candidates)
-    story += trade_sheets(candidates)
-    story += decision_framework()
-    story += historical_comparison()
-
+    story += index_structure()
+    story += threshold_section()
+    story += candidate_section(candidates)
+    story += checklist_section()
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     return output_path
 

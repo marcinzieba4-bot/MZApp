@@ -44,6 +44,14 @@ EXAMPLES = {
         "module": "examples.generate_2026_pdf",
         "description": "Generate PDF with 2026 MSCI Poland prospective trade ideas",
     },
+    "march_2026_update": {
+        "module": "examples.march_2026_update",
+        "description": "MSCI Poland March 2026 update — post Feb SAR data (CCC deleted, ACP added)",
+    },
+    "generate_march_2026_pdf": {
+        "module": "examples.generate_march_2026_pdf",
+        "description": "Generate PDF: MSCI Poland March 2026 update with verified live market data",
+    },
 }
 
 
