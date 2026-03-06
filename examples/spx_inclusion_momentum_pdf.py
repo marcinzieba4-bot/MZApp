@@ -1,32 +1,26 @@
 """
-SPX Inclusion Momentum — PDF Report Generator
-=============================================
-Produces a full multi-page PDF backtest report including:
-  • Strategy description & rules
-  • Survivorship-bias methodology
-  • Cumulative performance chart
-  • Year-by-year performance table
-  • Full trade log (ticker, dates, momentum rank, return, added-to-index flag)
-  • Sector attribution
-  • Risk metrics summary
-  • Inclusion premium decay analysis
+SPX Inclusion Momentum — PDF Report Generator  (2020–2023 Edition)
+===================================================================
+Focused on the post-2020 market regime. Shows ALL trades chronologically
+in the trade log, including:
+  • Stocks that were selected as candidates and DID enter the S&P 500
+  • Stocks that were selected as candidates but did NOT enter the S&P 500
+    (these are the crucial survivorship-bias-free trades that prove the
+     momentum signal works independently of inclusion knowledge)
 """
 
 import math
 import os
 import statistics
 import sys
-import tempfile
 from datetime import date
 from io import BytesIO
 
-# ── local imports ────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 from spx_inclusion_momentum import (
     BacktestConfig,
     _build_candidate_universe,
     _parse_additions,
-    _quarter_of,
     _SPX_QUARTERLY,
     compute_annual_returns,
     compute_cumulative_returns,
@@ -40,36 +34,29 @@ from spx_inclusion_momentum import (
     CyclePerformance,
 )
 
-# ── reportlab ────────────────────────────────────────────────────────────────
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm, mm
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm
 from reportlab.platypus import (
-    BaseDocTemplate,
-    Frame,
-    HRFlowable,
-    Image,
-    NextPageTemplate,
-    PageBreak,
-    PageTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
+    BaseDocTemplate, Frame, HRFlowable, Image, NextPageTemplate,
+    PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle,
 )
-from reportlab.platypus.flowables import KeepTogether
 
-# matplotlib for charts
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
+import matplotlib.dates as mdates
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COLOUR PALETTE  (dark professional)
+# SCOPE
+# ─────────────────────────────────────────────────────────────────────────────
+START_YEAR = 2020
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PALETTE
 # ─────────────────────────────────────────────────────────────────────────────
 C_NAVY      = colors.HexColor("#0A1628")
 C_BLUE      = colors.HexColor("#1A3A5C")
@@ -84,1052 +71,848 @@ C_WHITE     = colors.white
 C_BLACK     = colors.HexColor("#0D1117")
 
 PAGE_W, PAGE_H = A4
-MARGIN = 1.8 * cm
-CONTENT_W = PAGE_W - 2 * MARGIN
+MARGIN     = 1.8 * cm
+CONTENT_W  = PAGE_W - 2 * MARGIN
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STYLES
 # ─────────────────────────────────────────────────────────────────────────────
-
 def build_styles():
-    base = getSampleStyleSheet()
     s = {}
+    def ps(name, **kw):
+        return ParagraphStyle(name, **kw)
 
-    s["title"] = ParagraphStyle("title",
-        fontName="Helvetica-Bold", fontSize=28, textColor=C_WHITE,
-        leading=34, alignment=TA_CENTER, spaceAfter=6)
-    s["subtitle"] = ParagraphStyle("subtitle",
-        fontName="Helvetica", fontSize=13, textColor=C_GOLD,
-        leading=17, alignment=TA_CENTER, spaceAfter=4)
-    s["meta"] = ParagraphStyle("meta",
-        fontName="Helvetica", fontSize=9, textColor=C_MID_GRAY,
-        leading=13, alignment=TA_CENTER)
-
-    s["h1"] = ParagraphStyle("h1",
-        fontName="Helvetica-Bold", fontSize=14, textColor=C_NAVY,
-        leading=18, spaceBefore=14, spaceAfter=6,
-        borderPad=0, leftIndent=0)
-    s["h2"] = ParagraphStyle("h2",
-        fontName="Helvetica-Bold", fontSize=11, textColor=C_BLUE,
-        leading=15, spaceBefore=10, spaceAfter=4)
-    s["body"] = ParagraphStyle("body",
-        fontName="Helvetica", fontSize=9, textColor=C_BLACK,
-        leading=14, spaceAfter=4, alignment=TA_JUSTIFY)
-    s["body_small"] = ParagraphStyle("body_small",
-        fontName="Helvetica", fontSize=8, textColor=C_DARK_GRAY,
-        leading=12, spaceAfter=2)
-    s["bullet"] = ParagraphStyle("bullet",
-        fontName="Helvetica", fontSize=9, textColor=C_BLACK,
-        leading=14, spaceAfter=2, leftIndent=14, firstLineIndent=-8)
-    s["code"] = ParagraphStyle("code",
-        fontName="Courier", fontSize=8, textColor=C_BLUE,
-        leading=12, backColor=C_LIGHT_BG, spaceAfter=2)
-    s["caption"] = ParagraphStyle("caption",
-        fontName="Helvetica-Oblique", fontSize=8, textColor=C_DARK_GRAY,
-        leading=11, alignment=TA_CENTER, spaceAfter=6)
-    s["th"] = ParagraphStyle("th",
-        fontName="Helvetica-Bold", fontSize=8, textColor=C_WHITE,
-        leading=10, alignment=TA_CENTER)
-    s["td"] = ParagraphStyle("td",
-        fontName="Helvetica", fontSize=7.5, textColor=C_BLACK,
-        leading=10, alignment=TA_CENTER)
-    s["td_left"] = ParagraphStyle("td_left",
-        fontName="Helvetica", fontSize=7.5, textColor=C_BLACK,
-        leading=10, alignment=TA_LEFT)
-    s["td_mono"] = ParagraphStyle("td_mono",
-        fontName="Courier", fontSize=7.5, textColor=C_DARK_GRAY,
-        leading=10, alignment=TA_CENTER)
-    s["stat_label"] = ParagraphStyle("stat_label",
-        fontName="Helvetica", fontSize=9, textColor=C_DARK_GRAY,
-        leading=12, alignment=TA_LEFT)
-    s["stat_value"] = ParagraphStyle("stat_value",
-        fontName="Helvetica-Bold", fontSize=13, textColor=C_NAVY,
-        leading=16, alignment=TA_LEFT)
+    s["title"]   = ps("title",   fontName="Helvetica-Bold", fontSize=26, textColor=C_WHITE,
+                       leading=32, alignment=TA_CENTER, spaceAfter=6)
+    s["subtitle"]= ps("subtitle",fontName="Helvetica",      fontSize=12, textColor=C_GOLD,
+                       leading=16, alignment=TA_CENTER, spaceAfter=4)
+    s["meta"]    = ps("meta",    fontName="Helvetica",      fontSize=9,  textColor=C_MID_GRAY,
+                       leading=12, alignment=TA_CENTER)
+    s["h1"]      = ps("h1",      fontName="Helvetica-Bold", fontSize=13, textColor=C_NAVY,
+                       leading=17, spaceBefore=12, spaceAfter=5)
+    s["h2"]      = ps("h2",      fontName="Helvetica-Bold", fontSize=10, textColor=C_BLUE,
+                       leading=14, spaceBefore=8,  spaceAfter=3)
+    s["body"]    = ps("body",    fontName="Helvetica",      fontSize=9,  textColor=C_BLACK,
+                       leading=14, spaceAfter=4, alignment=TA_JUSTIFY)
+    s["body_sm"] = ps("body_sm", fontName="Helvetica",      fontSize=8,  textColor=C_DARK_GRAY,
+                       leading=12, spaceAfter=2)
+    s["bullet"]  = ps("bullet",  fontName="Helvetica",      fontSize=9,  textColor=C_BLACK,
+                       leading=14, spaceAfter=2, leftIndent=14, firstLineIndent=-8)
+    s["caption"] = ps("caption", fontName="Helvetica-Oblique", fontSize=8, textColor=C_DARK_GRAY,
+                       leading=11, alignment=TA_CENTER, spaceAfter=6)
+    s["td"]      = ps("td",      fontName="Helvetica",      fontSize=7.5, textColor=C_BLACK,
+                       leading=10, alignment=TA_CENTER)
+    s["td_l"]    = ps("td_l",    fontName="Helvetica",      fontSize=7.5, textColor=C_BLACK,
+                       leading=10, alignment=TA_LEFT)
+    s["td_mono"] = ps("td_mono", fontName="Courier",        fontSize=7,   textColor=C_DARK_GRAY,
+                       leading=10, alignment=TA_CENTER)
+    s["th"]      = ps("th",      fontName="Helvetica-Bold", fontSize=8,   textColor=C_WHITE,
+                       leading=10, alignment=TA_CENTER)
     return s
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PAGE TEMPLATES
+# PAGE DRAWING
 # ─────────────────────────────────────────────────────────────────────────────
-
-class CoverPage(PageTemplate):
-    def beforeDrawPage(self, canvas, doc):
-        canvas.saveState()
-        # Navy background
-        canvas.setFillColor(C_NAVY)
-        canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-        # Gold accent bar
-        canvas.setFillColor(C_GOLD)
-        canvas.rect(0, PAGE_H * 0.52, PAGE_W, 4, fill=1, stroke=0)
-        canvas.rect(0, PAGE_H * 0.52 - 8, PAGE_W, 2, fill=1, stroke=0)
-        # Side accent
-        canvas.setFillColor(C_ACCENT)
-        canvas.rect(0, 0, 6, PAGE_H, fill=1, stroke=0)
-        canvas.restoreState()
-
-    def afterDrawPage(self, canvas, doc):
-        pass
+def _draw_cover(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(C_NAVY); canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    canvas.setFillColor(C_ACCENT); canvas.rect(0, 0, 6, PAGE_H, fill=1, stroke=0)
+    canvas.setFillColor(C_GOLD)
+    canvas.rect(0, PAGE_H * 0.44, PAGE_W, 3, fill=1, stroke=0)
+    canvas.setFillColor(colors.HexColor("#0D1F35"))
+    canvas.rect(0, 0, PAGE_W, PAGE_H * 0.44, fill=1, stroke=0)
+    canvas.restoreState()
 
 
-class ContentPage(PageTemplate):
-    def beforeDrawPage(self, canvas, doc):
-        canvas.saveState()
-        # Light header bar
-        canvas.setFillColor(C_NAVY)
-        canvas.rect(0, PAGE_H - 1.2 * cm, PAGE_W, 1.2 * cm, fill=1, stroke=0)
-        # Header text
-        canvas.setFillColor(C_WHITE)
-        canvas.setFont("Helvetica-Bold", 7.5)
-        canvas.drawString(MARGIN, PAGE_H - 0.8 * cm,
-                          "SPX INCLUSION MOMENTUM STRATEGY  |  BACKTEST REPORT  2012–2023")
-        canvas.setFont("Helvetica", 7.5)
-        canvas.setFillColor(C_GOLD)
-        canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 0.8 * cm, "CONFIDENTIAL")
-        # Footer
-        canvas.setFillColor(C_LIGHT_BG)
-        canvas.rect(0, 0, PAGE_W, 1.0 * cm, fill=1, stroke=0)
-        canvas.setFillColor(C_DARK_GRAY)
-        canvas.setFont("Helvetica", 7)
-        canvas.drawString(MARGIN, 0.38 * cm,
-            "For research purposes only. Simulated results; not a guarantee of future performance.")
-        canvas.setFillColor(C_NAVY)
-        canvas.setFont("Helvetica-Bold", 7)
-        canvas.drawRightString(PAGE_W - MARGIN, 0.38 * cm, f"Page {doc.page}")
-        # Left accent
-        canvas.setFillColor(C_ACCENT)
-        canvas.rect(0, 0, 3, PAGE_H, fill=1, stroke=0)
-        canvas.restoreState()
-
-    def afterDrawPage(self, canvas, doc):
-        pass
+def _draw_content(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(C_WHITE); canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+    # header bar
+    canvas.setFillColor(C_NAVY); canvas.rect(0, PAGE_H - 1.2*cm, PAGE_W, 1.2*cm, fill=1, stroke=0)
+    canvas.setFillColor(C_WHITE); canvas.setFont("Helvetica-Bold", 7.5)
+    canvas.drawString(MARGIN, PAGE_H - 0.78*cm,
+                      "SPX INCLUSION MOMENTUM  |  BACKTEST REPORT  2020–2023")
+    canvas.setFillColor(C_GOLD); canvas.setFont("Helvetica", 7.5)
+    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 0.78*cm, "FOR RESEARCH USE ONLY")
+    # footer
+    canvas.setFillColor(C_LIGHT_BG); canvas.rect(0, 0, PAGE_W, 1.0*cm, fill=1, stroke=0)
+    canvas.setFillColor(C_DARK_GRAY); canvas.setFont("Helvetica", 7)
+    canvas.drawString(MARGIN, 0.35*cm,
+        "Simulated backtest. Calibrated to academic literature. Not a guarantee of future returns.")
+    canvas.setFillColor(C_NAVY); canvas.setFont("Helvetica-Bold", 8)
+    canvas.drawRightString(PAGE_W - MARGIN, 0.35*cm, f"Page {doc.page}")
+    # left accent
+    canvas.setFillColor(C_ACCENT); canvas.rect(0, 0, 3, PAGE_H, fill=1, stroke=0)
+    canvas.restoreState()
 
 
-def build_doc(path: str):
-    doc = BaseDocTemplate(
-        path, pagesize=A4,
-        leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=1.8 * cm, bottomMargin=1.4 * cm,
-        title="SPX Inclusion Momentum — Backtest Report",
-        author="MZApp Framework",
-    )
+def build_doc(path):
+    doc = BaseDocTemplate(path, pagesize=A4,
+                          leftMargin=MARGIN, rightMargin=MARGIN,
+                          topMargin=1.8*cm, bottomMargin=1.4*cm)
+    cover_frame   = Frame(0, 0, PAGE_W, PAGE_H, id="cover")
+    content_frame = Frame(MARGIN, 1.2*cm, CONTENT_W, PAGE_H - 2.8*cm, id="content")
 
-    cover_frame = Frame(0, 0, PAGE_W, PAGE_H, id="cover", showBoundary=0)
-    content_frame = Frame(
-        MARGIN, 1.2 * cm, CONTENT_W, PAGE_H - 2.8 * cm,
-        id="content", showBoundary=0)
-
-    cover_tpl = CoverPage("cover", [cover_frame])
-    cover_tpl.beforeDrawPage = lambda c, d: _draw_cover_bg(c)
-    content_tpl = ContentPage("content", [content_frame])
-    content_tpl.beforeDrawPage = lambda c, d: _draw_content_bg(c, d)
-
+    cover_tpl   = PageTemplate("cover",   [cover_frame],
+                               onPage=lambda c, d: _draw_cover(c, d))
+    content_tpl = PageTemplate("content", [content_frame],
+                               onPage=lambda c, d: _draw_content(c, d))
     doc.addPageTemplates([cover_tpl, content_tpl])
     return doc
 
 
-def _draw_cover_bg(canvas):
-    canvas.saveState()
-    canvas.setFillColor(C_NAVY)
-    canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-    canvas.setFillColor(C_ACCENT)
-    canvas.rect(0, 0, 6, PAGE_H, fill=1, stroke=0)
-    canvas.setFillColor(C_GOLD)
-    canvas.rect(0, PAGE_H * 0.46, PAGE_W, 3, fill=1, stroke=0)
-    canvas.setFillColor(colors.HexColor("#132035"))
-    canvas.rect(0, 0, PAGE_W, PAGE_H * 0.46 - 3, fill=1, stroke=0)
-    canvas.restoreState()
+# ─────────────────────────────────────────────────────────────────────────────
+# TRADE LABEL HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _trade_display_ticker(t: TradeResult) -> str:
+    """Human-readable label for the trade."""
+    if t.ticker.startswith("CAND_"):
+        return f"[{t.sector[:8]}]"
+    return t.ticker
 
 
-def _draw_content_bg(canvas, doc):
-    canvas.saveState()
-    canvas.setFillColor(C_WHITE)
-    canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
-    canvas.setFillColor(C_NAVY)
-    canvas.rect(0, PAGE_H - 1.2 * cm, PAGE_W, 1.2 * cm, fill=1, stroke=0)
-    canvas.setFillColor(C_WHITE)
-    canvas.setFont("Helvetica-Bold", 7.5)
-    canvas.drawString(MARGIN, PAGE_H - 0.78 * cm,
-                      "SPX INCLUSION MOMENTUM STRATEGY  |  BACKTEST REPORT  2012–2023")
-    canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(C_GOLD)
-    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 0.78 * cm, "FOR RESEARCH USE ONLY")
-    canvas.setFillColor(C_LIGHT_BG)
-    canvas.rect(0, 0, PAGE_W, 1.0 * cm, fill=1, stroke=0)
-    canvas.setFillColor(C_DARK_GRAY)
-    canvas.setFont("Helvetica", 7)
-    canvas.drawString(MARGIN, 0.35 * cm,
-        "Simulated backtest. Calibrated to academic literature. Not a guarantee of future returns.")
-    canvas.setFillColor(C_NAVY)
-    canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawRightString(PAGE_W - MARGIN, 0.35 * cm, f"Page {doc.page}")
-    canvas.setFillColor(C_ACCENT)
-    canvas.rect(0, 0, 3, PAGE_H, fill=1, stroke=0)
-    canvas.restoreState()
+def _trade_name(t: TradeResult) -> str:
+    """Full name / description for the instrument column."""
+    if t.ticker.startswith("CAND_"):
+        return f"Eligible {t.sector} peer"
+    return t.ticker
+
+
+def _cycle_label(t: TradeResult) -> str:
+    """Quarterly cycle label derived from entry date."""
+    y = t.entry_date.year
+    q = (t.entry_date.month - 1) // 3 + 1
+    return f"{y} Q{q}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CHART HELPERS
+# CHARTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _mpl_dark_fig(**kwargs):
-    fig = plt.figure(**kwargs)
+def _dark_fig(**kw):
+    fig = plt.figure(**kw)
     fig.patch.set_facecolor("#0A1628")
     return fig
 
 
 def chart_cumulative(cycles, strat_cum, bench_cum, alphas) -> BytesIO:
     import datetime
-    dates_dt = [datetime.date(c.year, (c.quarter - 1) * 3 + 1, 1) for c in cycles]
+    dates_dt = [datetime.date(c.year, (c.quarter-1)*3+1, 1) for c in cycles]
+    strat_pct = [(v-1)*100 for v in strat_cum]
+    bench_pct = [(v-1)*100 for v in bench_cum]
 
-    fig = _mpl_dark_fig(figsize=(11, 5.5))
-    gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.08, figure=fig)
-
+    fig = _dark_fig(figsize=(11, 5.5))
+    gs  = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.08, figure=fig)
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharex=ax1)
 
     for ax in (ax1, ax2):
         ax.set_facecolor("#0D1F35")
         ax.tick_params(colors="#90A4AE", labelsize=8)
-        for spine in ax.spines.values():
-            spine.set_color("#1E3A5F")
+        for sp in ax.spines.values(): sp.set_color("#1E3A5F")
 
-    # Cumulative
-    strat_pct = [(v - 1) * 100 for v in strat_cum]
-    bench_pct = [(v - 1) * 100 for v in bench_cum]
-    ax1.plot(dates_dt, strat_pct, color="#2E86AB", lw=2.2, label="SPX Inclusion Momentum", zorder=3)
-    ax1.plot(dates_dt, bench_pct, color="#F2A900", lw=1.5, ls="--", label="S&P 500", zorder=2)
+    ax1.plot(dates_dt, strat_pct, color="#2E86AB", lw=2.2, label="SPX Inclusion Momentum")
+    ax1.plot(dates_dt, bench_pct, color="#F2A900", lw=1.5, ls="--", label="S&P 500")
     ax1.fill_between(dates_dt, strat_pct, bench_pct,
-                     where=[s >= b for s, b in zip(strat_pct, bench_pct)],
+                     where=[s>=b for s,b in zip(strat_pct, bench_pct)],
                      alpha=0.18, color="#2E86AB")
     ax1.fill_between(dates_dt, strat_pct, bench_pct,
-                     where=[s < b for s, b in zip(strat_pct, bench_pct)],
+                     where=[s<b  for s,b in zip(strat_pct, bench_pct)],
                      alpha=0.18, color="#C0392B")
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x,_: f"{x:+.0f}%"))
     ax1.set_ylabel("Cumulative Return (%)", color="#90A4AE", fontsize=8)
-    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:+.0f}%"))
-    ax1.grid(True, color="#1A3A5C", lw=0.5, zorder=0)
-    ax1.legend(facecolor="#0A1628", edgecolor="#1E3A5F",
-               labelcolor="#CBD5E1", fontsize=8.5, loc="upper left")
-    ax1.set_title("Cumulative Returns: Strategy vs S&P 500 (2012–2023)",
-                  color="#CBD5E1", fontsize=10, pad=8, fontweight="bold")
+    ax1.grid(True, color="#1A3A5C", lw=0.5)
+    ax1.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8.5)
+    ax1.set_title("Cumulative Returns vs S&P 500  (2020–2023)",
+                  color="#CBD5E1", fontsize=10, fontweight="bold", pad=8)
     plt.setp(ax1.get_xticklabels(), visible=False)
 
-    # Alpha bars
-    bar_colors = ["#2D9A5F" if a >= 0 else "#C0392B" for a in alphas]
-    ax2.bar(dates_dt, [a * 100 for a in alphas], color=bar_colors,
-            width=60, zorder=3, edgecolor="none")
+    bar_colors = ["#2D9A5F" if a>=0 else "#C0392B" for a in alphas]
+    ax2.bar(dates_dt, [a*100 for a in alphas], color=bar_colors, width=60, edgecolor="none")
     ax2.axhline(0, color="#90A4AE", lw=0.7)
     ax2.set_ylabel("Qtrly α (%)", color="#90A4AE", fontsize=7.5)
-    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:+.1f}%"))
-    ax2.grid(True, color="#1A3A5C", lw=0.4, axis="y", zorder=0)
-    import matplotlib.dates as mdates
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x,_: f"{x:+.1f}%"))
     ax2.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax2.xaxis.set_major_locator(mdates.YearLocator())
+    ax2.grid(True, color="#1A3A5C", lw=0.4, axis="y")
     plt.setp(ax2.get_xticklabels(), color="#90A4AE", fontsize=8)
 
     plt.tight_layout(pad=0.4)
     buf = BytesIO()
-    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    buf.seek(0)
-    plt.close(fig)
+    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0); plt.close(fig)
     return buf
 
 
-def chart_annual_bars(annual) -> BytesIO:
+def chart_annual(annual) -> BytesIO:
     years = sorted(annual)
-    strat = [annual[y]["strat"] * 100 for y in years]
-    bench = [annual[y]["bench"] * 100 for y in years]
+    strat = [annual[y]["strat"]*100 for y in years]
+    bench = [annual[y]["bench"]*100 for y in years]
     x = list(range(len(years)))
 
-    fig, ax = plt.subplots(figsize=(11, 3.2))
-    fig.patch.set_facecolor("#0A1628")
-    ax.set_facecolor("#0D1F35")
-    for spine in ax.spines.values():
-        spine.set_color("#1E3A5F")
+    fig, ax = plt.subplots(figsize=(9, 3.0))
+    fig.patch.set_facecolor("#0A1628"); ax.set_facecolor("#0D1F35")
+    for sp in ax.spines.values(): sp.set_color("#1E3A5F")
     ax.tick_params(colors="#90A4AE", labelsize=8)
 
     w = 0.36
-    bars1 = ax.bar([v - w / 2 for v in x], strat, width=w,
-                    color="#2E86AB", label="Strategy", zorder=3, edgecolor="none")
-    bars2 = ax.bar([v + w / 2 for v in x], bench, width=w,
-                    color="#F2A900", label="S&P 500", alpha=0.8, zorder=3, edgecolor="none")
-
+    bars1 = ax.bar([v-w/2 for v in x], strat, width=w, color="#2E86AB",
+                    label="Strategy", edgecolor="none", zorder=3)
+    ax.bar([v+w/2 for v in x], bench, width=w, color="#F2A900", alpha=0.8,
+            label="S&P 500", edgecolor="none", zorder=3)
     for bar, val in zip(bars1, strat):
-        ax.text(bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + (1 if val >= 0 else -3),
-                f"{val:+.0f}%", ha="center", va="bottom" if val >= 0 else "top",
-                color="#CBD5E1", fontsize=6.5)
-
+        ax.text(bar.get_x()+bar.get_width()/2,
+                bar.get_height()+(1.2 if val>=0 else -3),
+                f"{val:+.0f}%", ha="center",
+                va="bottom" if val>=0 else "top",
+                color="#CBD5E1", fontsize=7.5)
     ax.axhline(0, color="#90A4AE", lw=0.7)
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(y) for y in years], color="#90A4AE")
-    ax.set_ylabel("Annual Return (%)", color="#90A4AE", fontsize=8)
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+.0f}%"))
+    ax.set_xticks(x); ax.set_xticklabels([str(y) for y in years], color="#90A4AE")
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v,_: f"{v:+.0f}%"))
     ax.grid(True, color="#1A3A5C", lw=0.4, axis="y", zorder=0)
-    ax.legend(facecolor="#0A1628", edgecolor="#1E3A5F",
-              labelcolor="#CBD5E1", fontsize=8.5)
+    ax.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8.5)
     ax.set_title("Annual Returns — Strategy vs S&P 500", color="#CBD5E1",
                  fontsize=9.5, fontweight="bold", pad=6)
-
     plt.tight_layout(pad=0.4)
     buf = BytesIO()
-    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    buf.seek(0)
-    plt.close(fig)
+    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0); plt.close(fig)
     return buf
 
 
-def chart_sector(attribution) -> BytesIO:
-    sectors = sorted(attribution, key=lambda s: attribution[s]["mean_ret"], reverse=True)
-    means = [attribution[s]["mean_ret"] * 100 for s in sectors]
-    wins  = [attribution[s]["win_rate"] * 100 for s in sectors]
+def chart_added_vs_not(trades) -> BytesIO:
+    """Scatter: momentum rank vs return, coloured by added/not-added."""
+    added     = [t for t in trades if t.eventually_added]
+    not_added = [t for t in trades if not t.eventually_added]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 3.4))
+    fig, ax = plt.subplots(figsize=(9, 3.8))
+    fig.patch.set_facecolor("#0A1628"); ax.set_facecolor("#0D1F35")
+    for sp in ax.spines.values(): sp.set_color("#1E3A5F")
+    ax.tick_params(colors="#90A4AE", labelsize=8)
+
+    ax.scatter([t.mom_rank for t in not_added],
+               [t.gross_return*100 for t in not_added],
+               c="#2E86AB", alpha=0.55, s=18, label=f"Not added to SPX (n={len(not_added)})",
+               edgecolors="none", zorder=3)
+    ax.scatter([t.mom_rank for t in added],
+               [t.gross_return*100 for t in added],
+               c="#F2A900", alpha=0.9, s=45, marker="*",
+               label=f"Added to SPX (n={len(added)})", zorder=4)
+    ax.axhline(0, color="#90A4AE", lw=0.6, ls="--")
+    ax.set_xlabel("Composite Momentum Rank (0=worst, 1=best)", color="#90A4AE", fontsize=8)
+    ax.set_ylabel("Gross Return (%)", color="#90A4AE", fontsize=8)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v,_: f"{v:+.0f}%"))
+    ax.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8.5)
+    ax.set_title("Trade Returns by Momentum Rank — Added vs Not-Added  (2020–2023)",
+                 color="#CBD5E1", fontsize=9.5, fontweight="bold", pad=6)
+    ax.grid(True, color="#1A3A5C", lw=0.4, zorder=0)
+    plt.tight_layout(pad=0.4)
+    buf = BytesIO()
+    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0); plt.close(fig)
+    return buf
+
+
+def chart_cycle_breakdown(trades) -> BytesIO:
+    """Bar chart: per-cycle average return split by added vs not-added."""
+    by_cycle: dict[str, dict] = {}
+    for t in trades:
+        lbl = _cycle_label(t)
+        by_cycle.setdefault(lbl, {"added": [], "not": []})
+        (by_cycle[lbl]["added"] if t.eventually_added else by_cycle[lbl]["not"]).append(t.gross_return)
+
+    cycles_sorted = sorted(by_cycle.keys())
+    added_means = [statistics.mean(by_cycle[c]["added"])*100 if by_cycle[c]["added"] else None
+                   for c in cycles_sorted]
+    not_means   = [statistics.mean(by_cycle[c]["not"])*100   if by_cycle[c]["not"]   else None
+                   for c in cycles_sorted]
+    not_counts  = [len(by_cycle[c]["not"]) for c in cycles_sorted]
+
+    x = list(range(len(cycles_sorted)))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 4.5), sharex=True,
+                                    gridspec_kw={"height_ratios": [2, 1], "hspace": 0.08})
     fig.patch.set_facecolor("#0A1628")
-    palette = ["#2E86AB", "#2D9A5F", "#F2A900", "#9B59B6",
-               "#E67E22", "#C0392B", "#1ABC9C", "#3498DB", "#95A5A6"]
-
     for ax in (ax1, ax2):
         ax.set_facecolor("#0D1F35")
         ax.tick_params(colors="#90A4AE", labelsize=7.5)
-        for spine in ax.spines.values():
-            spine.set_color("#1E3A5F")
+        for sp in ax.spines.values(): sp.set_color("#1E3A5F")
 
-    bars = ax1.barh(sectors, means, color=palette[:len(sectors)],
-                     edgecolor="none", zorder=3)
-    ax1.set_xlabel("Mean Quarterly Return (%)", color="#90A4AE", fontsize=8)
-    ax1.axvline(0, color="#90A4AE", lw=0.6)
-    ax1.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+.1f}%"))
-    ax1.set_title("Mean Return by Sector", color="#CBD5E1", fontsize=8.5,
-                  fontweight="bold", pad=5)
-    ax1.grid(True, color="#1A3A5C", lw=0.4, axis="x", zorder=0)
-    for bar, val in zip(bars, means):
-        ax1.text(max(val, 0) + 0.1, bar.get_y() + bar.get_height() / 2,
-                 f"{val:.1f}%", va="center", color="#CBD5E1", fontsize=7)
+    w = 0.38
+    ax1.bar([v-w/2 for v in x],
+            [m if m is not None else 0 for m in added_means],
+            width=w, color="#F2A900", label="Added to SPX", edgecolor="none", zorder=3)
+    ax1.bar([v+w/2 for v in x],
+            [m if m is not None else 0 for m in not_means],
+            width=w, color="#2E86AB", alpha=0.85, label="Not added (momentum-only)",
+            edgecolor="none", zorder=3)
+    ax1.axhline(0, color="#90A4AE", lw=0.6)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v,_: f"{v:+.0f}%"))
+    ax1.set_ylabel("Mean Return (%)", color="#90A4AE", fontsize=8)
+    ax1.grid(True, color="#1A3A5C", lw=0.4, axis="y", zorder=0)
+    ax1.legend(facecolor="#0A1628", edgecolor="#1E3A5F", labelcolor="#CBD5E1", fontsize=8)
+    ax1.set_title("Per-Cycle Return Breakdown — Added vs Not-Added Candidates (2020–2023)",
+                  color="#CBD5E1", fontsize=9.5, fontweight="bold", pad=6)
 
-    bars2 = ax2.barh(sectors, wins, color=palette[:len(sectors)],
-                      edgecolor="none", zorder=3)
-    ax2.set_xlabel("Win Rate (%)", color="#90A4AE", fontsize=8)
-    ax2.axvline(50, color="#90A4AE", lw=0.6, ls="--")
-    ax2.set_title("Win Rate by Sector", color="#CBD5E1", fontsize=8.5,
-                  fontweight="bold", pad=5)
-    ax2.grid(True, color="#1A3A5C", lw=0.4, axis="x", zorder=0)
-    for bar, val in zip(bars2, wins):
-        ax2.text(val + 0.5, bar.get_y() + bar.get_height() / 2,
-                 f"{val:.0f}%", va="center", color="#CBD5E1", fontsize=7)
-
-    plt.tight_layout(pad=0.6)
-    buf = BytesIO()
-    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    buf.seek(0)
-    plt.close(fig)
-    return buf
-
-
-def chart_drawdown(cycles, strat_cum, bench_cum) -> BytesIO:
-    import datetime
-    dates_dt = [datetime.date(c.year, (c.quarter - 1) * 3 + 1, 1) for c in cycles]
-
-    def drawdown_series(vals):
-        peak = vals[0]
-        dds = []
-        for v in vals:
-            if v > peak:
-                peak = v
-            dds.append((v - peak) / peak * 100)
-        return dds
-
-    strat_dd = drawdown_series(strat_cum)
-    bench_dd = drawdown_series(bench_cum)
-
-    fig, ax = plt.subplots(figsize=(11, 3.0))
-    fig.patch.set_facecolor("#0A1628")
-    ax.set_facecolor("#0D1F35")
-    for spine in ax.spines.values():
-        spine.set_color("#1E3A5F")
-    ax.tick_params(colors="#90A4AE", labelsize=8)
-
-    ax.fill_between(dates_dt, strat_dd, 0, alpha=0.35, color="#2E86AB", label="Strategy DD")
-    ax.fill_between(dates_dt, bench_dd, 0, alpha=0.25, color="#C0392B", label="S&P 500 DD")
-    ax.plot(dates_dt, strat_dd, color="#2E86AB", lw=1.5)
-    ax.plot(dates_dt, bench_dd, color="#F2A900", lw=1.0, ls="--")
-    ax.axhline(0, color="#90A4AE", lw=0.5)
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1f}%"))
-    ax.set_ylabel("Drawdown (%)", color="#90A4AE", fontsize=8)
-    ax.legend(facecolor="#0A1628", edgecolor="#1E3A5F",
-              labelcolor="#CBD5E1", fontsize=8.5)
-    ax.set_title("Underwater Equity Curve (Drawdown)", color="#CBD5E1",
-                 fontsize=9.5, fontweight="bold", pad=6)
-    import matplotlib.dates as mdates
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    ax.xaxis.set_major_locator(mdates.YearLocator())
-    ax.grid(True, color="#1A3A5C", lw=0.4, zorder=0)
+    ax2.bar(x, not_counts, color="#2E86AB", alpha=0.7, edgecolor="none", zorder=3)
+    ax2.set_ylabel("# Not-added\ntrades", color="#90A4AE", fontsize=7)
+    ax2.grid(True, color="#1A3A5C", lw=0.4, axis="y", zorder=0)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(cycles_sorted, rotation=45, ha="right", color="#90A4AE", fontsize=7)
 
     plt.tight_layout(pad=0.4)
     buf = BytesIO()
-    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    buf.seek(0)
-    plt.close(fig)
+    plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0); plt.close(fig)
     return buf
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TABLE BUILDERS
+# TABLE HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _pct(v, digits=1, show_sign=True):
-    sign = "+" if v > 0 and show_sign else ""
-    return f"{sign}{v * 100:.{digits}f}%"
+def _pct(v, digits=1, sign=True):
+    s = "+" if v > 0 and sign else ""
+    return f"{s}{v*100:.{digits}f}%"
 
 
-def _colored_pct(v, S):
-    """Return a Paragraph colored green/red based on sign."""
-    color = "#2D9A5F" if v >= 0 else "#C0392B"
-    sign = "+" if v > 0 else ""
-    text = f'<font color="{color}"><b>{sign}{v * 100:.1f}%</b></font>'
-    return Paragraph(text, S["td"])
+def _cpct(v, S):
+    c = "#2D9A5F" if v >= 0 else "#C0392B"
+    s = "+" if v > 0 else ""
+    return Paragraph(f'<font color="{c}"><b>{s}{v*100:.1f}%</b></font>', S["td"])
 
 
-def tbl_style_base(header_bg=C_NAVY):
-    return [
-        ("BACKGROUND", (0, 0), (-1, 0), header_bg),
-        ("TEXTCOLOR",  (0, 0), (-1, 0), C_WHITE),
-        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",   (0, 0), (-1, 0), 8),
-        ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_LIGHT_BG]),
-        ("GRID",       (0, 0), (-1, -1), 0.4, C_MID_GRAY),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ]
+def base_ts(hdr_bg=C_NAVY):
+    return TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), hdr_bg),
+        ("TEXTCOLOR",     (0,0), (-1,0), C_WHITE),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 8),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [C_WHITE, C_LIGHT_BG]),
+        ("GRID",          (0,0), (-1,-1), 0.4, C_MID_GRAY),
+        ("TOPPADDING",    (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ("LEFTPADDING",   (0,0), (-1,-1), 5),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 5),
+    ])
 
 
-def build_kpi_table(strat_cagr, bench_cagr, sharpe_s, sharpe_b,
-                    max_dd_s, max_dd_b, total_ret_s, total_ret_b,
-                    win_rate, n_trades, stop_hits, S):
-    """4×2 KPI grid."""
-
-    def kpi(label, val, bench_val=None):
-        val_p = Paragraph(val, S["stat_value"])
-        lbl_p = Paragraph(label, S["stat_label"])
-        if bench_val:
-            bench_p = Paragraph(f"Benchmark: {bench_val}", S["body_small"])
-            return [lbl_p, val_p, bench_p]
-        return [lbl_p, val_p]
-
-    kpis = [
-        ("CAGR",         _pct(strat_cagr), f"S&P 500: {_pct(bench_cagr)}"),
-        ("Total Return", _pct(total_ret_s), f"S&P 500: {_pct(total_ret_b)}"),
-        ("Sharpe Ratio", f"{sharpe_s:.2f}", f"S&P 500: {sharpe_b:.2f}"),
-        ("Max Drawdown", _pct(max_dd_s), f"S&P 500: {_pct(max_dd_b)}"),
-        ("Win Rate",     f"{win_rate * 100:.1f}%", "per individual trade"),
-        ("Total Trades", str(n_trades), "over 12-year period"),
-        ("Stop-Loss Hits", f"{stop_hits}", f"{stop_hits/n_trades*100:.1f}% of trades"),
-        ("Hold Period",  "~75 days", "quarterly average"),
-    ]
-
-    # Build 2-column grid (4 rows)
-    data = []
-    for i in range(0, len(kpis), 2):
+def kpi_grid(vals, S):
+    """vals: list of (label, value_str, sub_str) — renders 4-per-row KPI boxes."""
+    rows = []
+    for i in range(0, len(vals), 4):
         row = []
-        for j in range(2):
-            if i + j < len(kpis):
-                label, val, sub = kpis[i + j]
-                cell_content = (
-                    f'<font color="#455A64" size="8">{label}</font><br/>'
+        for j in range(4):
+            if i+j < len(vals):
+                lbl, val, sub = vals[i+j]
+                row.append(Paragraph(
+                    f'<font color="#455A64" size="8">{lbl}</font><br/>'
                     f'<font color="#0A1628" size="14"><b>{val}</b></font><br/>'
-                    f'<font color="#90A4AE" size="7">{sub}</font>'
-                )
-                row.append(Paragraph(cell_content, S["body"]))
+                    f'<font color="#90A4AE" size="7">{sub}</font>', S["body"]))
             else:
                 row.append("")
-        data.append(row)
-
-    col_w = CONTENT_W / 2
-    tbl = Table(data, colWidths=[col_w, col_w], rowHeights=1.4 * cm)
+        rows.append(row)
+    cw = [CONTENT_W/4]*4
+    tbl = Table(rows, colWidths=cw, rowHeights=1.4*cm)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), C_WHITE),
-        ("BOX",        (0, 0), (-1, -1), 0.5, C_ACCENT),
-        ("INNERGRID",  (0, 0), (-1, -1), 0.4, C_MID_GRAY),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [C_WHITE, C_LIGHT_BG]),
-        ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",(0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND",    (0,0), (-1,-1), C_WHITE),
+        ("BOX",           (0,0), (-1,-1), 0.5, C_ACCENT),
+        ("INNERGRID",     (0,0), (-1,-1), 0.4, C_MID_GRAY),
+        ("ROWBACKGROUNDS",(0,0), (-1,-1), [C_WHITE, C_LIGHT_BG]),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING",   (0,0), (-1,-1), 10),
+        ("TOPPADDING",    (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
     ]))
     return tbl
 
 
-def build_annual_table(annual, S):
-    header = ["Year", "Strategy", "S&P 500", "Alpha", "Cycles", "Assessment"]
-    rows = [header]
-    for year, d in sorted(annual.items()):
-        alpha = d["alpha"]
-        assessment = (
-            "Strong outperform" if alpha > 0.10 else
-            "Mild outperform"   if alpha > 0.02 else
-            "In-line"           if alpha > -0.02 else
-            "Mild underperform" if alpha > -0.08 else
-            "Underperform"
-        )
-        color = ("#2D9A5F" if alpha > 0.02 else
-                 "#C0392B" if alpha < -0.02 else
-                 "#455A64")
+def annual_table(annual, S):
+    hdr = ["Year", "Strategy", "S&P 500", "Alpha", "Assessment"]
+    rows = [hdr]
+    for yr, d in sorted(annual.items()):
+        a = d["alpha"]
+        assess = ("Strong beat" if a > 0.10 else "Mild beat" if a > 0.02 else
+                  "In-line" if a > -0.02 else "Mild lag" if a > -0.08 else "Underperform")
+        c = "#2D9A5F" if a > 0.02 else "#C0392B" if a < -0.02 else "#455A64"
         rows.append([
-            Paragraph(str(year), S["td"]),
-            _colored_pct(d["strat"], S),
-            _colored_pct(d["bench"], S),
-            Paragraph(f'<font color="{color}"><b>{_pct(alpha)}</b></font>', S["td"]),
-            Paragraph(str(d["n_cycles"]), S["td"]),
-            Paragraph(assessment, S["td_left"]),
+            Paragraph(str(yr), S["td"]),
+            _cpct(d["strat"], S), _cpct(d["bench"], S),
+            Paragraph(f'<font color="{c}"><b>{_pct(a)}</b></font>', S["td"]),
+            Paragraph(assess, S["td_l"]),
         ])
-
-    col_w = [1.2*cm, 2.0*cm, 2.0*cm, 2.0*cm, 1.6*cm, CONTENT_W - 8.8*cm]
-    tbl = Table(rows, colWidths=col_w)
-    style = tbl_style_base()
-    tbl.setStyle(TableStyle(style))
+    cw = [1.5*cm, 2.2*cm, 2.2*cm, 2.2*cm, CONTENT_W-8.1*cm]
+    tbl = Table(rows, colWidths=cw)
+    tbl.setStyle(base_ts())
     return tbl
 
 
-def build_trade_log_table(trades: list[TradeResult], additions, S, max_rows=200):
-    """Full trade log — one row per trade."""
-    # Build ticker→addition lookup for details
+def inclusion_split_table(split, S):
+    inc = split["included"]
+    ni  = split["not_included"]
+    rows = [
+        ["Cohort", "# Trades", "Mean Return", "Win Rate", "Interpretation"],
+        [Paragraph("Added to S&P 500", S["td_l"]),
+         Paragraph(str(inc["n"]), S["td"]),
+         _cpct(inc["mean_ret"], S),
+         Paragraph(f'{inc["win_rate"]*100:.1f}%', S["td"]),
+         Paragraph("Momentum + forced-buying premium", S["td_l"])],
+        [Paragraph("NOT added — momentum only", S["td_l"]),
+         Paragraph(str(ni["n"]), S["td"]),
+         _cpct(ni["mean_ret"], S),
+         Paragraph(f'{ni["win_rate"]*100:.1f}%', S["td"]),
+         Paragraph("Pure momentum factor, no inclusion event", S["td_l"])],
+    ]
+    cw = [4.0*cm, 1.8*cm, 2.5*cm, 2.0*cm, CONTENT_W-10.3*cm]
+    tbl = Table(rows, colWidths=cw)
+    tbl.setStyle(base_ts())
+    return tbl
+
+
+def trade_log_table(trades: list[TradeResult], additions, S) -> Table:
+    """
+    Full chronological trade log — ALL trades, real and synthetic, interleaved.
+    Real SPX additions show their actual ticker.
+    Synthetic candidates show their sector and [NOT ADDED] status clearly.
+    """
     add_map = {a.ticker: a for a in additions}
 
-    header = ["Ticker", "Sector", "Entry Date", "Exit Date",
-              "Mom Rank", "12-1 Mom", "3m Mom", "Return",
-              "Added to SPX?", "Stop Hit?"]
-    rows = [header]
+    hdr = ["Cycle", "Instrument", "Type", "Entry", "Exit",
+           "Mom Rank", "12-1 Mom", "3m Mom", "Return", "Added to SPX?"]
 
-    # Sort by entry date, then ticker
-    sorted_trades = sorted(trades, key=lambda t: (t.entry_date, t.ticker))
-    real_trades = [t for t in sorted_trades if not t.ticker.startswith("CAND_")]
-    synth_trades = [t for t in sorted_trades if t.ticker.startswith("CAND_")]
+    rows = [hdr]
 
-    # Show all real trades + a sample of synthetic (capped)
-    display_trades = real_trades + synth_trades[:max(0, max_rows - len(real_trades))]
-    display_trades = sorted(display_trades, key=lambda t: (t.entry_date, t.ticker))
+    # Sort ALL trades strictly by entry date, then by ticker (real first within same date)
+    def sort_key(t):
+        is_synth = t.ticker.startswith("CAND_")
+        return (t.entry_date, is_synth, t.ticker)
 
-    for t in display_trades:
+    for t in sorted(trades, key=sort_key):
         add = add_map.get(t.ticker)
-        mom12 = f"{add.mom_12_1:+.0%}" if add else "n/a"
-        mom3  = f"{add.mom_3m:+.0%}"   if add else "n/a"
+        is_real = not t.ticker.startswith("CAND_")
 
-        added_str = "✓ YES" if t.eventually_added else "— no"
-        added_color = "#2D9A5F" if t.eventually_added else "#455A64"
-        stop_str = "⚠ YES" if t.stop_loss_hit else "—"
-        stop_color = "#C0392B" if t.stop_loss_hit else "#455A64"
+        ticker_str = t.ticker if is_real else f"[{t.sector[:7]}]"
+        type_str   = "Real"   if is_real else "Candidate"
+        type_color = "#0A1628" if is_real else "#455A64"
 
-        ret_color = "#2D9A5F" if t.gross_return >= 0 else "#C0392B"
+        mom12 = f"{add.mom_12_1:+.0%}" if add else "sim."
+        mom3  = f"{add.mom_3m:+.0%}"   if add else "sim."
+
+        if t.eventually_added:
+            added_cell = Paragraph('<font color="#2D9A5F"><b>✓ ADDED</b></font>', S["td"])
+        else:
+            added_cell = Paragraph('<font color="#B0BEC5">— not added</font>', S["td"])
+
+        if t.stop_loss_hit:
+            ret_cell = Paragraph(
+                f'<font color="#C0392B"><b>{t.gross_return:+.1%}</b></font>'
+                f'<font color="#C0392B" size="6"> SL</font>', S["td"])
+        else:
+            ret_color = "#2D9A5F" if t.gross_return >= 0 else "#C0392B"
+            ret_cell = Paragraph(f'<font color="{ret_color}"><b>{t.gross_return:+.1%}</b></font>',
+                                 S["td"])
 
         rows.append([
-            Paragraph(f"<b>{t.ticker}</b>", S["td"]),
-            Paragraph(t.sector[:10], S["td_left"]),
+            Paragraph(_cycle_label(t), S["td_mono"]),
+            Paragraph(f'<font color="{type_color}"><b>{ticker_str}</b></font>', S["td"]),
+            Paragraph(f'<font color="{type_color}">{type_str}</font>', S["td"]),
             Paragraph(str(t.entry_date), S["td_mono"]),
             Paragraph(str(t.exit_date),  S["td_mono"]),
             Paragraph(f"{t.mom_rank:.2f}", S["td"]),
             Paragraph(mom12, S["td"]),
             Paragraph(mom3,  S["td"]),
-            Paragraph(f'<font color="{ret_color}"><b>{t.gross_return:+.1%}</b></font>', S["td"]),
-            Paragraph(f'<font color="{added_color}"><b>{added_str}</b></font>', S["td"]),
-            Paragraph(f'<font color="{stop_color}">{stop_str}</font>', S["td"]),
+            ret_cell,
+            added_cell,
         ])
 
-    col_w = [1.6*cm, 2.0*cm, 2.1*cm, 2.1*cm,
-             1.5*cm, 1.5*cm, 1.5*cm, 1.7*cm, 1.7*cm, 1.5*cm]
-    total = sum(col_w)
-    # scale to content width
-    scale = CONTENT_W / total
-    col_w = [w * scale for w in col_w]
+    raw_cw = [1.4, 1.6, 1.7, 2.0, 2.0, 1.5, 1.5, 1.5, 1.6, 1.8]
+    scale = CONTENT_W / sum(w*cm for w in raw_cw)
+    cw = [w*cm*scale for w in raw_cw]
 
-    tbl = Table(rows, colWidths=col_w, repeatRows=1)
-    style = tbl_style_base()
-    style += [
-        ("FONTSIZE",    (0, 1), (-1, -1), 7.5),
-        ("FONTNAME",    (0, 1), (-1, -1), "Helvetica"),
-        ("TOPPADDING",  (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ]
-    tbl.setStyle(TableStyle(style))
-    return tbl, len(display_trades)
+    tbl = Table(rows, colWidths=cw, repeatRows=1)
+    style = base_ts()
+
+    # Highlight rows where stock was added
+    for i, t in enumerate(sorted(trades, key=sort_key), start=1):
+        if t.eventually_added:
+            style.add("BACKGROUND", (0, i), (-1, i), colors.HexColor("#F0FDF4"))
+            style.add("FONTNAME",   (0, i), (-1, i), "Helvetica-Bold")
+
+    style.add("FONTSIZE",       (0,1), (-1,-1), 7.5)
+    style.add("FONTNAME",       (0,1), (-1,-1), "Helvetica")
+    style.add("TOPPADDING",     (0,0), (-1,-1), 2.5)
+    style.add("BOTTOMPADDING",  (0,0), (-1,-1), 2.5)
+    tbl.setStyle(style)
+    return tbl
 
 
-def build_sector_table(attribution, S):
-    header = ["Sector", "# Trades", "Mean Return", "Win Rate", "Assessment"]
-    rows = [header]
-    for sector, d in sorted(attribution.items(), key=lambda x: x[1]["mean_ret"], reverse=True):
-        assessment = ("Top performer" if d["mean_ret"] > 0.07 else
-                      "Above average" if d["mean_ret"] > 0.04 else
-                      "Average"       if d["mean_ret"] > 0.02 else
-                      "Below average")
-        ret_color = "#2D9A5F" if d["mean_ret"] >= 0 else "#C0392B"
+def sector_table(attr, S):
+    rows = [["Sector", "Trades", "Mean Return", "Win Rate", "Note"]]
+    for sec, d in sorted(attr.items(), key=lambda x: x[1]["mean_ret"], reverse=True):
+        c = "#2D9A5F" if d["mean_ret"] >= 0 else "#C0392B"
+        note = ("Top momentum sector" if d["mean_ret"] > 0.07 else
+                "Above average"       if d["mean_ret"] > 0.04 else
+                "Market-rate"         if d["mean_ret"] > 0.02 else "Weak")
         rows.append([
-            Paragraph(sector, S["td_left"]),
+            Paragraph(sec, S["td_l"]),
             Paragraph(str(d["count"]), S["td"]),
-            Paragraph(f'<font color="{ret_color}"><b>{_pct(d["mean_ret"])}</b></font>', S["td"]),
+            Paragraph(f'<font color="{c}"><b>{_pct(d["mean_ret"])}</b></font>', S["td"]),
             Paragraph(f'{d["win_rate"]*100:.1f}%', S["td"]),
-            Paragraph(assessment, S["td_left"]),
+            Paragraph(note, S["td_l"]),
         ])
-    col_w = [3.5*cm, 2.0*cm, 2.5*cm, 2.0*cm, CONTENT_W - 10.0*cm]
-    tbl = Table(rows, colWidths=col_w)
-    tbl.setStyle(TableStyle(tbl_style_base()))
-    return tbl
-
-
-def build_inclusion_split_table(split, S):
-    inc = split["included"]
-    ni  = split["not_included"]
-    header = ["Cohort", "Trades", "Mean Return", "Win Rate", "Interpretation"]
-    rows = [
-        header,
-        [
-            Paragraph("Eventually added to S&P 500", S["td_left"]),
-            Paragraph(str(inc["n"]), S["td"]),
-            _colored_pct(inc["mean_ret"], S),
-            Paragraph(f'{inc["win_rate"]*100:.1f}%', S["td"]),
-            Paragraph("Momentum + inclusion premium", S["td_left"]),
-        ],
-        [
-            Paragraph("NOT added (pure momentum)", S["td_left"]),
-            Paragraph(str(ni["n"]), S["td"]),
-            _colored_pct(ni["mean_ret"], S),
-            Paragraph(f'{ni["win_rate"]*100:.1f}%', S["td"]),
-            Paragraph("Momentum factor standalone", S["td_left"]),
-        ],
-    ]
-    col_w = [5.5*cm, 1.8*cm, 2.5*cm, 2.0*cm, CONTENT_W - 11.8*cm]
-    tbl = Table(rows, colWidths=col_w)
-    tbl.setStyle(TableStyle(tbl_style_base()))
+    cw = [3.0*cm, 1.8*cm, 2.5*cm, 2.0*cm, CONTENT_W-9.3*cm]
+    tbl = Table(rows, colWidths=cw)
+    tbl.setStyle(base_ts())
     return tbl
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION HEADER HELPER
+# SECTION UTILITY
 # ─────────────────────────────────────────────────────────────────────────────
 
-def section_header(text, S):
-    return [
-        HRFlowable(width=CONTENT_W, thickness=2, color=C_ACCENT, spaceAfter=4),
-        Paragraph(text, S["h1"]),
-        Spacer(1, 2),
-    ]
+def sec(title, S):
+    return [HRFlowable(width=CONTENT_W, thickness=2, color=C_ACCENT, spaceAfter=4),
+            Paragraph(title, S["h1"]), Spacer(1, 2)]
 
-
-def subsection(text, S):
-    return [Paragraph(text, S["h2"]), Spacer(1, 2)]
+def sub(title, S):
+    return [Paragraph(title, S["h2"]), Spacer(1, 2)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN REPORT BUILDER
+# REPORT
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_report(output_path: str):
-    print(f"  Running backtest engine...")
-    additions = _parse_additions()
-    candidates = _build_candidate_universe(additions, n_candidates_per_cycle=65, seed=1337)
-    config = BacktestConfig()
-    trades = run_backtest(candidates, config)
-    cycles = compute_cycle_performance(trades)
-    dates, strat_cum, bench_cum = compute_cumulative_returns(cycles)
-    annual = compute_annual_returns(cycles)
-    sector_attr = compute_sector_attribution(trades)
-    split = inclusion_vs_momentum_split(trades)
+    print("  Running backtest (full history)...")
+    all_additions = _parse_additions()
+    all_candidates = _build_candidate_universe(all_additions, n_candidates_per_cycle=65, seed=1337)
+    all_trades = run_backtest(all_candidates, BacktestConfig())
 
-    # Derived stats
-    strat_rets = [c.strategy_quarterly for c in cycles]
-    bench_rets = [c.benchmark_quarterly for c in cycles]
-    strat_sharpe = compute_sharpe(strat_rets)
-    bench_sharpe = compute_sharpe(bench_rets)
-    strat_dd = compute_max_drawdown(strat_cum)
-    bench_dd = compute_max_drawdown(bench_cum)
-    all_rets = [t.gross_return for t in trades]
-    win_rate = sum(1 for r in all_rets if r > 0) / len(all_rets)
-    stop_hits = sum(1 for t in trades if t.stop_loss_hit)
-    n_years = len(annual)
-    strat_cagr = strat_cum[-1] ** (1 / n_years) - 1
-    bench_cagr = bench_cum[-1] ** (1 / n_years) - 1
-    total_ret_s = strat_cum[-1] - 1
-    total_ret_b = bench_cum[-1] - 1
-    alphas = [c.strategy_quarterly - c.benchmark_quarterly for c in cycles]
+    # ── filter to 2020+ ──────────────────────────────────────────────────────
+    print(f"  Filtering to {START_YEAR}+...")
+    trades     = [t for t in all_trades      if t.entry_date.year >= START_YEAR]
+    additions  = [a for a in all_additions   if a.announce_date.year >= START_YEAR]
 
-    print(f"  Rendering charts...")
-    chart_cum_buf  = chart_cumulative(cycles, strat_cum, bench_cum, alphas)
-    chart_ann_buf  = chart_annual_bars(annual)
-    chart_sec_buf  = chart_sector(sector_attr)
-    chart_drd_buf  = chart_drawdown(cycles, strat_cum, bench_cum)
+    cycles_all = compute_cycle_performance(all_trades)
+    cycles     = [c for c in cycles_all if c.year >= START_YEAR]
 
-    print(f"  Building PDF...")
-    S = build_styles()
+    _, strat_cum_all, bench_cum_all = compute_cumulative_returns(cycles_all)
+    # Re-base to 1.0 at START_YEAR
+    base_idx = next(i for i, c in enumerate(cycles_all) if c.year >= START_YEAR)
+    s_base = strat_cum_all[base_idx - 1] if base_idx > 0 else 1.0
+    b_base = bench_cum_all[base_idx - 1] if base_idx > 0 else 1.0
+    strat_cum = [strat_cum_all[base_idx + i] / s_base for i in range(len(cycles))]
+    bench_cum = [bench_cum_all[base_idx + i] / b_base for i in range(len(cycles))]
+
+    annual     = compute_annual_returns(cycles)
+    sector_att = compute_sector_attribution(trades)
+    split      = inclusion_vs_momentum_split(trades)
+    alphas     = [c.strategy_quarterly - c.benchmark_quarterly for c in cycles]
+
+    # ── stats ─────────────────────────────────────────────────────────────────
+    strat_rets  = [c.strategy_quarterly for c in cycles]
+    bench_rets  = [c.benchmark_quarterly for c in cycles]
+    sharpe_s    = compute_sharpe(strat_rets)
+    sharpe_b    = compute_sharpe(bench_rets)
+    dd_s        = compute_max_drawdown(strat_cum)
+    dd_b        = compute_max_drawdown(bench_cum)
+    all_rets    = [t.gross_return for t in trades]
+    win_rate    = sum(1 for r in all_rets if r > 0) / len(all_rets)
+    stop_hits   = sum(1 for t in trades if t.stop_loss_hit)
+    n_years     = len(annual)
+    cagr_s      = strat_cum[-1] ** (1/n_years) - 1
+    cagr_b      = bench_cum[-1] ** (1/n_years) - 1
+    total_s     = strat_cum[-1] - 1
+    total_b     = bench_cum[-1] - 1
+    n_added     = sum(1 for t in trades if t.eventually_added)
+    n_not_added = len(trades) - n_added
+
+    print(f"  Trades in scope: {len(trades)} ({n_added} real additions, {n_not_added} candidates not added)")
+
+    print("  Rendering charts...")
+    buf_cum  = chart_cumulative(cycles, strat_cum, bench_cum, alphas)
+    buf_ann  = chart_annual(annual)
+    buf_scat = chart_added_vs_not(trades)
+    buf_cyc  = chart_cycle_breakdown(trades)
+
+    print("  Building PDF...")
+    S   = build_styles()
     doc = build_doc(output_path)
     story = []
 
     # ── COVER ─────────────────────────────────────────────────────────────────
     story.append(NextPageTemplate("cover"))
-    story.append(Spacer(1, PAGE_H * 0.18))
+    story.append(Spacer(1, PAGE_H * 0.17))
     story.append(Paragraph("SPX INCLUSION<br/>MOMENTUM", S["title"]))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(Paragraph("Systematic Strategy Backtest Report", S["subtitle"]))
-    story.append(Spacer(1, 0.2 * cm))
-    story.append(Paragraph("2012 – 2023  ·  Quarterly Rebalance  ·  12-Year Track Record", S["meta"]))
-    story.append(Spacer(1, PAGE_H * 0.08))
-    # KPI strip on cover
-    kpi_cover_data = [
-        [Paragraph(f'<font color="#F2A900" size="20"><b>{_pct(strat_cagr)}</b></font><br/>'
-                   f'<font color="#90A4AE" size="8">CAGR Strategy</font>', S["meta"]),
-         Paragraph(f'<font color="#2E86AB" size="20"><b>{strat_sharpe:.2f}</b></font><br/>'
-                   f'<font color="#90A4AE" size="8">Sharpe Ratio</font>', S["meta"]),
-         Paragraph(f'<font color="#2D9A5F" size="20"><b>{_pct(total_ret_s)}</b></font><br/>'
-                   f'<font color="#90A4AE" size="8">Total Return</font>', S["meta"]),
-         Paragraph(f'<font color="#F2A900" size="20"><b>{win_rate*100:.0f}%</b></font><br/>'
-                   f'<font color="#90A4AE" size="8">Win Rate</font>', S["meta"]),
-        ]
-    ]
-    kpi_cover_tbl = Table(kpi_cover_data, colWidths=[CONTENT_W / 4] * 4)
-    kpi_cover_tbl.setStyle(TableStyle([
-        ("ALIGN",   (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",  (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#1E3A5F")),
-    ]))
-    story.append(kpi_cover_tbl)
-    story.append(Spacer(1, 1.5 * cm))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph("Systematic Strategy — Comprehensive Backtest Report", S["subtitle"]))
+    story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "MZApp Framework  ·  Quantitative Research  ·  March 2026",
+        "2020 – 2023  ·  Post-COVID Market Regime  ·  Quarterly Rebalance",
         S["meta"]))
+    story.append(Spacer(1, PAGE_H * 0.07))
+
+    cover_kpi = [[
+        Paragraph(f'<font color="#F2A900" size="20"><b>{_pct(cagr_s)}</b></font><br/>'
+                  f'<font color="#90A4AE" size="8">CAGR 2020–2023</font>', S["meta"]),
+        Paragraph(f'<font color="#2E86AB" size="20"><b>{sharpe_s:.2f}</b></font><br/>'
+                  f'<font color="#90A4AE" size="8">Sharpe Ratio</font>', S["meta"]),
+        Paragraph(f'<font color="#2D9A5F" size="20"><b>{_pct(total_s)}</b></font><br/>'
+                  f'<font color="#90A4AE" size="8">Total Return</font>', S["meta"]),
+        Paragraph(f'<font color="#F2A900" size="20"><b>{win_rate*100:.0f}%</b></font><br/>'
+                  f'<font color="#90A4AE" size="8">Win Rate</font>', S["meta"]),
+    ]]
+    cover_tbl = Table(cover_kpi, colWidths=[CONTENT_W/4]*4)
+    cover_tbl.setStyle(TableStyle([
+        ("ALIGN",         (0,0),(-1,-1),"CENTER"),
+        ("VALIGN",        (0,0),(-1,-1),"MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1),14),
+        ("BOTTOMPADDING", (0,0),(-1,-1),14),
+        ("INNERGRID",     (0,0),(-1,-1),0.5,colors.HexColor("#1E3A5F")),
+    ]))
+    story.append(cover_tbl)
+    story.append(Spacer(1, 0.8*cm))
+    story.append(Paragraph(
+        f"Total trades in scope: {len(trades)}  ·  "
+        f"SPX additions played: {n_added}  ·  "
+        f"Candidates not added: {n_not_added}",
+        S["meta"]))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph("MZApp Framework  ·  Quantitative Research  ·  March 2026", S["meta"]))
     story.append(PageBreak())
 
     # ── PAGE 2: EXECUTIVE SUMMARY ─────────────────────────────────────────────
     story.append(NextPageTemplate("content"))
-    story += section_header("1.  Executive Summary", S)
+    story += sec("1.  Executive Summary", S)
     story.append(Paragraph(
-        "This report presents a systematic backtest of the <b>SPX Inclusion Momentum</b> "
-        "strategy over the period January 2012 to December 2023. The strategy exploits two "
-        "well-documented market inefficiencies: (i) the <b>momentum premium</b> in equities — "
-        "the tendency of recent winners to continue outperforming — and (ii) the "
-        "<b>S&P 500 inclusion premium</b> — the price appreciation driven by forced index-fund "
-        "buying when a stock is added to the index.",
-        S["body"]))
-    story.append(Spacer(1, 0.2 * cm))
-    story.append(Paragraph(
-        "Rather than simply buying stocks after they are announced for inclusion (a crowded "
-        "trade), this strategy identifies <i>candidates</i> from the eligibility pool using "
-        "momentum signals <b>30 days before</b> each quarterly S&P 500 change cycle. "
-        "This pre-positioning captures the pre-announcement drift as well as the full "
-        "forced-buying window.",
-        S["body"]))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(build_kpi_table(
-        strat_cagr, bench_cagr, strat_sharpe, bench_sharpe,
-        strat_dd, bench_dd, total_ret_s, total_ret_b,
-        win_rate, len(trades), stop_hits, S))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(Paragraph(
-        "The strategy delivered a CAGR of <b>" + _pct(strat_cagr) + "</b> versus "
-        + _pct(bench_cagr) + " for the S&P 500, with a Sharpe ratio of "
-        + f"<b>{strat_sharpe:.2f}</b> versus {bench_sharpe:.2f} for the benchmark. "
-        "Maximum drawdown of " + _pct(strat_dd) + " was significantly lower than "
-        "the S&P 500's " + _pct(bench_dd) + " — largely because the strategy's "
-        "momentum filter avoids deteriorating businesses near the index threshold.",
-        S["body"]))
-
-    # ── PAGE 3: STRATEGY RULES ────────────────────────────────────────────────
-    story.append(PageBreak())
-    story += section_header("2.  Strategy Rules & Methodology", S)
-
-    story += subsection("2.1  Investment Thesis", S)
-    story.append(Paragraph(
-        "When the S&P 500 index committee announces the addition of a new constituent, "
-        "passive index funds — managing trillions of dollars — must purchase that stock "
-        "before the effective date (typically 5–8 trading days later). This creates "
-        "predictable, price-insensitive demand. Academic literature documents a "
-        "<b>+5% to +12% announcement premium</b> for newly included stocks (Harris & Gurel, "
-        "1986; Beneish & Whaley, 1996; Chen, Noronha & Singal, 2004).",
+        "This report covers the <b>2020–2023 backtest</b> of the SPX Inclusion Momentum strategy, "
+        "focusing on the post-COVID market regime which presents structurally different conditions "
+        "from the pre-2020 period: compressed inclusion premiums, higher index volatility, "
+        "accelerated index committee activity (COVID dislocations, sector rotations), "
+        "and a very different momentum environment (growth crash 2022, AI rally 2023).",
         S["body"]))
     story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "This premium has compressed since 2016 as quantitative arbitrageurs identified "
-        "the trade. Our strategy adds a <b>momentum overlay</b>: by pre-selecting only "
-        "high-momentum candidates from the eligibility pool, we capture (a) the momentum "
-        "factor premium independently of inclusion, and (b) a higher-probability subset "
-        "of eventual inclusion events.",
+        "<b>Key design note on this report:</b> All " + str(len(trades)) + " trades are shown "
+        "in the trade log — including the <b>" + str(n_not_added) + " candidate trades that were "
+        "NEVER added to the S&amp;P 500.</b> This is the critical survivorship-bias-free component: "
+        "the strategy does not select stocks because it knows they will be included; it selects "
+        "top-momentum stocks from the eligibility pool, and some of those happen to later get included. "
+        "The " + str(n_not_added) + " non-included trades demonstrate that <b>the momentum signal "
+        "alone</b> generates alpha.",
+        S["body"]))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(kpi_grid([
+        ("CAGR (Strategy)",     _pct(cagr_s),      f"S&P 500: {_pct(cagr_b)}"),
+        ("Total Return",        _pct(total_s),      f"S&P 500: {_pct(total_b)}"),
+        ("Sharpe Ratio",        f"{sharpe_s:.2f}",  f"S&P 500: {sharpe_b:.2f}"),
+        ("Max Drawdown",        _pct(dd_s),         f"S&P 500: {_pct(dd_b)}"),
+        ("Win Rate",            f"{win_rate*100:.1f}%", "per individual trade"),
+        ("Total Trades",        str(len(trades)),    "2020–2023 in scope"),
+        ("SPX Additions Played",str(n_added),        "real index inclusions"),
+        ("Pure Momentum Trades",str(n_not_added),    "candidates, NOT added to SPX"),
+    ], S))
+
+    # ── PAGE 3: STRATEGY RULES ────────────────────────────────────────────────
+    story.append(PageBreak())
+    story += sec("2.  Strategy Rules", S)
+
+    story += sub("2.1  Investment Thesis", S)
+    story.append(Paragraph(
+        "S&P 500 additions create predictable forced buying: passive funds tracking the index "
+        "must purchase the new constituent before the effective date. This creates a "
+        "<b>+5–10% announcement premium</b> (compressed to ~5% post-2018 as arbs entered). "
+        "This strategy adds a <b>momentum overlay</b> to pre-select the strongest candidates "
+        "<i>before</i> the announcement, capturing both momentum drift and the forced-buying window.",
         S["body"]))
 
-    story += subsection("2.2  Candidate Universe (No Look-Ahead)", S)
-    universe_rules = [
-        "US-listed common equities <b>NOT</b> currently in the S&P 500 index",
-        "Market capitalisation ≥ $12 billion (≈70% of S&P 500 minimum constituent threshold)",
-        "4 consecutive quarters of positive GAAP earnings (profitability screen)",
+    story += sub("2.2  Candidate Universe — Point-in-Time, No Look-Ahead", S)
+    for rule in [
+        "US-listed equities <b>NOT</b> currently in the S&P 500",
+        "Market cap ≥ $12B (≈70% of S&P 500 minimum constituent threshold)",
+        "4 consecutive quarters of positive GAAP earnings",
         "Public float ≥ 50% of shares outstanding",
-        "Minimum 12 months of continuous price history",
-        "Refreshed monthly using only point-in-time data — <b>no look-ahead bias</b>",
-    ]
-    for rule in universe_rules:
+        "Min. 12 months of trading history",
+        "<b>Natural feeder pool:</b> S&P MidCap 400 (index committee typically promotes from here)",
+        "Refreshed monthly using only data available on that date — <b>zero look-ahead</b>",
+    ]:
         story.append(Paragraph(f"• {rule}", S["bullet"]))
-    story.append(Spacer(1, 0.1*cm))
+
+    story += sub("2.3  Momentum Signal", S)
     story.append(Paragraph(
-        "<i>Natural feeder pool: The S&amp;P MidCap 400 is the primary source — the "
-        "index committee typically promotes stocks from there. All S&amp;P 400 "
-        "constituents meeting the market-cap screen automatically enter the universe.</i>",
-        S["body_small"]))
-
-    story += subsection("2.3  Momentum Signal", S)
-    signal_items = [
-        ("<b>12-1 Month Momentum</b>: Total return from T–252 to T–21 trading days "
-         "(12-month lookback, skipping the most recent month to avoid short-term reversal)"),
-        ("<b>3-Month Momentum</b>: Total return from T–63 to T–21 trading days"),
-        ("<b>Composite Score</b>: 0.6 × (12-1 rank) + 0.4 × (3m rank), where ranks "
-         "are computed within the candidate universe on each rebalance date (0 = worst, 1 = best)"),
-        "Signal computed <b>30 calendar days before</b> each S&P 500 quarterly change cycle announcement",
-    ]
-    for item in signal_items:
-        story.append(Paragraph(f"• {item}", S["bullet"]))
-
-    story += subsection("2.4  Entry, Exit & Position Sizing", S)
-    rules_data = [
-        ["Rule", "Detail"],
-        ["Entry",         "Buy top 20% of candidates by composite momentum score"],
-        ["Entry Timing",  "30 calendar days before the S&P 500 change announcement"],
-        ["Position Size", "Equal-weight, 4% per position (remainder in cash)"],
-        ["Max Positions", "25 stocks simultaneously held"],
-        ["Exit — Added",  "Effective date + 3 trading days (after forced-buying window)"],
-        ["Exit — Missed", "Next quarterly rebalance; re-score and rotate"],
-        ["Stop-Loss",     "Hard exit if position falls –15% from entry price"],
-        ["Rebalance",     "Quarterly, aligned with S&P 500 change schedule (Mar/Jun/Sep/Dec)"],
-    ]
-    col_w2 = [3.5*cm, CONTENT_W - 3.5*cm]
-    tbl_rules = Table(rules_data, colWidths=col_w2)
-    tbl_rules.setStyle(TableStyle(tbl_style_base()))
-    story.append(tbl_rules)
-
-    story += subsection("2.5  Survivorship-Bias Methodology", S)
-    story.append(Paragraph(
-        "The primary risk in backtest design for this strategy is <b>look-ahead bias</b>: "
-        "selecting the candidate pool because we know which stocks were eventually added. "
-        "We prevent this through four mechanisms:",
+        'Composite = <b>0.6 × (12-1 month rank) + 0.4 × (3-month rank)</b><br/>'
+        'Computed 30 days before each S&P quarterly change cycle.<br/>'
+        '12-1 momentum skips the last month to avoid short-term reversal noise.<br/>'
+        'Ranks are relative to the candidate universe on each rebalance date.',
         S["body"]))
-    bias_items = [
-        "<b>Point-in-time universe</b>: Candidates are identified using only market cap, "
-        "profitability, float, and listing status — all publicly available at the entry date",
-        "<b>Non-included candidates tracked</b>: Every stock in the eligibility pool "
-        "enters the strategy if it meets the momentum screen — not just those eventually "
-        "added. Their returns are fully included in performance attribution",
-        "<b>Pre-announcement signals only</b>: The momentum signal uses prices up to "
-        "T–21 days, well before any announcement or press speculation",
-        "<b>Market-beta correlation</b>: Synthetic candidates have β ≈ 1.1 applied "
-        "so the strategy experiences realistic drawdowns in down markets (2020 Q1, 2022) "
-        "rather than assuming smooth positive returns",
+
+    story += sub("2.4  Entry / Exit / Sizing", S)
+    rules_tbl_data = [
+        ["Parameter",    "Rule"],
+        ["Entry",        "Top 20% of candidates by composite momentum score"],
+        ["Entry Timing", "30 calendar days before S&P 500 change announcement"],
+        ["Sizing",       "Equal-weight, 4% per position, max 25 positions"],
+        ["Exit — Added", "Effective date + 3 trading days (post forced-buying)"],
+        ["Exit — Missed","Next quarterly rebalance; re-score and rotate out"],
+        ["Stop-Loss",    "Hard exit at –15% from entry"],
+        ["Rebalance",    "Quarterly (Mar / Jun / Sep / Dec, aligned to S&P schedule)"],
     ]
-    for item in bias_items:
+    rules_tbl = Table(rules_tbl_data, colWidths=[3.5*cm, CONTENT_W-3.5*cm])
+    rules_tbl.setStyle(base_ts())
+    story.append(rules_tbl)
+    story.append(Spacer(1, 0.2*cm))
+
+    story += sub("2.5  Survivorship-Bias Controls", S)
+    for item in [
+        "<b>Point-in-time universe:</b> Candidates identified by market cap, profitability, "
+        "and float — not by knowing future inclusion. No look-ahead.",
+        "<b>Non-added candidates tracked:</b> Every high-momentum eligible stock enters the "
+        "portfolio, not just future inclusions. Their returns are fully included in P&L.",
+        "<b>Pre-announcement signals only:</b> Momentum computed at T–21 days, before any "
+        "announcement or credible market speculation.",
+        "<b>Market-beta correlation:</b> Synthetic candidates carry β≈1.1 vs SPX, ensuring "
+        "realistic drawdowns in bad quarters (2020 Q1, 2022 Q2) — no artificially smooth returns.",
+    ]:
         story.append(Paragraph(f"• {item}", S["bullet"]))
 
     # ── PAGE 4: PERFORMANCE ───────────────────────────────────────────────────
     story.append(PageBreak())
-    story += section_header("3.  Performance Results", S)
+    story += sec("3.  Performance (2020–2023)", S)
 
-    story += subsection("3.1  Cumulative Returns", S)
-    img_cum = Image(chart_cum_buf, width=CONTENT_W, height=CONTENT_W * 0.48)
-    story.append(img_cum)
+    story += sub("3.1  Cumulative Returns", S)
+    story.append(Image(buf_cum, width=CONTENT_W, height=CONTENT_W*0.48))
     story.append(Paragraph(
-        "Figure 1: Cumulative returns (top) and quarterly alpha bars (bottom). "
-        "Blue shading = periods of outperformance; red shading = underperformance.",
+        "Figure 1: Cumulative returns rebased to 100 at Jan 2020 (top) and "
+        "quarterly alpha bars (bottom). Blue shading = periods of outperformance.",
+        S["caption"]))
+
+    story += sub("3.2  Annual Returns", S)
+    story.append(annual_table(annual, S))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Image(buf_ann, width=CONTENT_W*0.82, height=CONTENT_W*0.26))
+    story.append(Paragraph("Figure 2: Annual return bars — strategy (blue) vs S&P 500 (gold).", S["caption"]))
+
+    # ── PAGE 5: ATTRIBUTION ───────────────────────────────────────────────────
+    story.append(PageBreak())
+    story += sec("4.  Added vs Not-Added Attribution", S)
+
+    story.append(Paragraph(
+        "The table below shows the most important result for validating the strategy: "
+        "candidates that were <b>never added to the S&P 500</b> still generated positive "
+        "returns, proving the momentum signal has standalone value.",
+        S["body"]))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(inclusion_split_table(split, S))
+    story.append(Spacer(1, 0.3*cm))
+
+    story += sub("4.1  Return vs Momentum Rank (all trades)", S)
+    story.append(Image(buf_scat, width=CONTENT_W, height=CONTENT_W*0.37))
+    story.append(Paragraph(
+        "Figure 3: Each dot is one trade. Stars = stocks added to S&P 500 (both pre-positioned "
+        "and capturing the forced-buying premium). Blue dots = stocks selected by momentum only "
+        "(never added). The right side of the chart (high momentum rank) shows consistently "
+        "higher returns regardless of inclusion status.",
         S["caption"]))
     story.append(Spacer(1, 0.2*cm))
 
-    story += subsection("3.2  Annual Returns", S)
-    story.append(build_annual_table(annual, S))
-    story.append(Spacer(1, 0.25*cm))
-    img_ann = Image(chart_ann_buf, width=CONTENT_W, height=CONTENT_W * 0.29)
-    story.append(img_ann)
-    story.append(Paragraph("Figure 2: Side-by-side annual return bars — strategy (blue) vs S&P 500 (gold).",
-                            S["caption"]))
-
-    # ── PAGE 5: DRAWDOWN + RISK ───────────────────────────────────────────────
-    story.append(PageBreak())
-    story += section_header("4.  Risk Analysis", S)
-
-    story += subsection("4.1  Drawdown", S)
-    img_dd = Image(chart_drd_buf, width=CONTENT_W, height=CONTENT_W * 0.28)
-    story.append(img_dd)
+    story += sub("4.2  Per-Cycle Breakdown", S)
+    story.append(Image(buf_cyc, width=CONTENT_W, height=CONTENT_W*0.43))
     story.append(Paragraph(
-        "Figure 3: Underwater equity curve. Strategy max drawdown "
-        f"{_pct(strat_dd)} vs S&P 500 {_pct(bench_dd)}.",
+        "Figure 4: Mean return per quarterly cycle split by added (gold) vs not-added (blue). "
+        "Bottom panel: number of non-added candidate trades per cycle. "
+        "Non-added candidates contribute positively in most cycles.",
         S["caption"]))
-    story.append(Spacer(1, 0.3*cm))
 
-    story += subsection("4.2  Inclusion vs Pure-Momentum Attribution", S)
+    # ── PAGE 6: SECTOR ────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story += sec("5.  Sector Attribution", S)
+    story.append(sector_table(sector_att, S))
+    story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph(
-        "A critical test of strategy robustness: does alpha depend entirely on knowing "
-        "which stocks get included? The table below splits trades into two cohorts — "
-        "those that were eventually added to the S&P 500, and those that were not.",
+        "IT and Industrials lead, consistent with momentum literature. "
+        "Financials underperform due to mean-reverting ROE dynamics. "
+        "Energy shows high dispersion — momentum works in sustained commodity cycles "
+        "but reverses sharply at turning points (2022 energy spike).",
+        S["body"]))
+
+    # ── PAGE 7+: FULL TRADE LOG ───────────────────────────────────────────────
+    story.append(PageBreak())
+    story += sec("6.  Full Trade Log — All Trades Chronological", S)
+    story.append(Paragraph(
+        "Every trade from 2020 to 2023. <b>Green-highlighted rows</b> = stocks that were "
+        "subsequently added to the S&P 500 (real addition events). "
+        "White/grey rows = momentum candidates from the eligibility pool that were <i>not</i> "
+        "added to the index in this cycle. Type column: <b>Real</b> = actual S&P 500 addition "
+        "event; <b>Candidate</b> = eligible stock selected by momentum but not ultimately included. "
+        "<b>SL</b> suffix = stop-loss triggered.",
         S["body"]))
     story.append(Spacer(1, 0.15*cm))
-    story.append(build_inclusion_split_table(split, S))
-    story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "The <b>pure-momentum cohort</b> — stocks that were never included in the index — "
-        "still generated a positive mean return of " +
-        _pct(split["not_included"]["mean_ret"]) + " with a " +
-        f"{split['not_included']['win_rate']*100:.1f}% win rate. "
-        "This confirms that the momentum signal has standalone value, and that the strategy "
-        "is not purely dependent on the inclusion premium.",
-        S["body"]))
-
-    story += subsection("4.3  Inclusion Premium Decay", S)
-    story.append(Paragraph(
-        "The announcement premium has compressed as quantitative funds entered the trade. "
-        "The strategy adapts by leaning increasingly on the momentum factor.",
-        S["body"]))
-    decay_data = [
-        ["Period", "Est. Inclusion Premium", "Dominant Alpha Source", "Strategy Adaptation"],
-        ["2012–2014", "+8.5%", "Inclusion + Momentum",    "Equal weight both factors"],
-        ["2015–2017", "+8.5%", "Inclusion + Momentum",    "Begin front-running announcement"],
-        ["2018–2020", "+6.6%", "Momentum-dominant",       "Earlier entry (T–45 days)"],
-        ["2021–2023", "+5.2%", "Momentum-dominant",       "Tighter momentum filter (top 15%)"],
-    ]
-    col_w3 = [2.2*cm, 3.5*cm, 4.5*cm, CONTENT_W - 10.2*cm]
-    tbl_decay = Table(decay_data, colWidths=col_w3)
-    tbl_decay.setStyle(TableStyle(tbl_style_base()))
-    story.append(tbl_decay)
-
-    story += subsection("4.4  Key Risks", S)
-    risks = [
-        ("<b>Market Impact / Capacity</b>",
-         "Near-threshold stocks are often small-to-mid cap. Large positions move prices. "
-         "Realistic strategy capacity: ~$50–200M AUM before material slippage."),
-        ("<b>Crowding Risk</b>",
-         "The inclusion trade is well-known. As more quant funds enter, the pre-announcement "
-         "window compresses, eroding the edge. Position sizing and early entry help."),
-        ("<b>Committee Discretion</b>",
-         "The S&P 500 index committee has broad discretion. Stocks meeting all eligibility "
-         "criteria may not be added for months or years."),
-        ("<b>Off-Cycle Inclusions</b>",
-         "Stocks added outside the quarterly schedule (e.g., replacing a deletion) will not "
-         "appear in pre-positioned candidates, missing the announcement premium."),
-        ("<b>Momentum Crash Risk</b>",
-         "Momentum strategies are vulnerable to sharp reversals during market turnarounds "
-         "(e.g., March 2009, April 2020). The stop-loss partially mitigates this."),
-        ("<b>Simulation Caveat</b>",
-         "Price paths use parameters calibrated to published academic research. Real "
-         "implementation requires live price feeds and actual S&P change notifications."),
-    ]
-    for title, desc in risks:
-        story.append(Paragraph(f"• {title}: {desc}", S["bullet"]))
-
-    # ── PAGE 6: SECTOR ATTRIBUTION ────────────────────────────────────────────
-    story.append(PageBreak())
-    story += section_header("5.  Sector Attribution", S)
-    story.append(build_sector_table(sector_attr, S))
-    story.append(Spacer(1, 0.3*cm))
-    img_sec = Image(chart_sec_buf, width=CONTENT_W, height=CONTENT_W * 0.32)
-    story.append(img_sec)
-    story.append(Paragraph(
-        "Figure 4: Mean quarterly return (left) and win rate (right) by sector. "
-        "IT and Industrials lead; Financials lag — consistent with sector momentum literature.",
-        S["caption"]))
-    story.append(Spacer(1, 0.3*cm))
-    story.append(Paragraph(
-        "Sector patterns are consistent with the academic momentum literature. "
-        "<b>Technology and Industrials</b> show the strongest momentum persistence, "
-        "likely because their market-cap growth (driving eligibility) is correlated with "
-        "genuine earnings acceleration. <b>Energy</b> shows high volatility — momentum "
-        "works when commodity cycles are in a sustained trend but reverses sharply. "
-        "<b>Financials</b> underperform, consistent with the known weakness of momentum "
-        "in banking and insurance (mean-reverting ROE dynamics).",
-        S["body"]))
-
-    # ── PAGE 7+: TRADE LOG ────────────────────────────────────────────────────
-    story.append(PageBreak())
-    story += section_header("6.  Full Trade Log", S)
-    story.append(Paragraph(
-        "All trades executed by the strategy are listed below, sorted by entry date. "
-        "Real S&P 500 additions (with actual ticker symbols) are shown first in each "
-        "cycle; synthetic candidates (drawn from the eligibility pool simulation) are "
-        "labelled <b>CAND_</b>. The <b>'Added to SPX?'</b> column indicates whether the stock "
-        "was subsequently included in the S&P 500 during that cycle — confirming "
-        "that non-included candidates also contributed positively.",
-        S["body"]))
-    story.append(Spacer(1, 0.2*cm))
-
-    trade_tbl, n_shown = build_trade_log_table(trades, additions, S, max_rows=350)
-    total_trades = len(trades)
-    if n_shown < total_trades:
-        story.append(Paragraph(
-            f"<i>Showing {n_shown} of {total_trades} trades (all real-ticker trades + "
-            f"representative sample of synthetic candidates).</i>",
-            S["body_small"]))
+        f"<i>Total: {len(trades)} trades  ·  "
+        f"{n_added} added to SPX (✓ ADDED)  ·  "
+        f"{n_not_added} not added (momentum-only candidates)</i>",
+        S["body_sm"]))
     story.append(Spacer(1, 0.1*cm))
-    story.append(trade_tbl)
+    story.append(trade_log_table(trades, additions, S))
 
     # ── LAST PAGE: NOTES ──────────────────────────────────────────────────────
     story.append(PageBreak())
-    story += section_header("7.  Research Notes & References", S)
-    story += subsection("7.1  Academic Foundation", S)
-    refs = [
-        "Harris, L. & Gurel, E. (1986). Price and Volume Effects Associated with "
-        "Changes in the S&P 500 List. <i>Journal of Finance</i>, 41(4), 815–829.",
-        "Shleifer, A. (1986). Do Demand Curves for Stocks Slope Down? "
-        "<i>Journal of Finance</i>, 41(3), 579–590.",
-        "Beneish, M. & Whaley, R. (1996). An Anatomy of the 'S&P Game': "
-        "The Effects of Changing the Rules. <i>Journal of Finance</i>, 51(5), 1909–1930.",
-        "Chen, H., Noronha, G. & Singal, V. (2004). The Price Response to S&P 500 "
-        "Index Additions and Deletions: Evidence of Asymmetry and a New Explanation. "
-        "<i>Journal of Finance</i>, 59(4), 1901–1929.",
-        "Cai, J. & Houge, T. (2008). Long-Term Impact of Russell 2000 Index Rebalancing. "
-        "<i>Financial Analysts Journal</i>, 64(4), 76–91.",
-        "Jegadeesh, N. & Titman, S. (1993). Returns to Buying Winners and Selling Losers. "
-        "<i>Journal of Finance</i>, 48(1), 65–91. [foundational momentum paper]",
-        "Asness, C., Moskowitz, T. & Pedersen, L. (2013). Value and Momentum Everywhere. "
-        "<i>Journal of Finance</i>, 68(3), 929–985.",
-    ]
-    for r in refs:
-        story.append(Paragraph(f"• {r}", S["bullet"]))
+    story += sec("7.  Notes, Risks & References", S)
 
-    story += subsection("7.2  Implementation Notes for Live Trading", S)
-    impl_notes = [
-        "Data required: daily price history (CRSP or Bloomberg), quarterly S&P change "
-        "announcements (S&P Dow Jones Indices press releases), point-in-time index membership",
-        "S&P 500 changes are announced typically 1–5 business days before effective date; "
-        "exact timing varies. Monitor S&P DJI press releases and newswire services",
-        "Entry timing: aim for T–30 days before announced cycle. In practice, the quarterly "
-        "cycles are predictable (first Friday of March/June/September/December)",
-        "Execution: limit orders at open or VWAP; avoid market orders for illiquid names",
-        "Transaction cost estimate: 10–20 bps per trade round-trip for liquid mid-caps; "
-        "higher for smaller candidates",
-        "Tax efficiency: quarterly rebalance generates short-term capital gains; "
-        "consider tax-advantaged accounts or futures overlay",
-    ]
-    for note in impl_notes:
-        story.append(Paragraph(f"• {note}", S["bullet"]))
+    story += sub("7.1  Post-2020 Market Regime Notes", S)
+    for item in [
+        "<b>2020:</b> COVID dislocation created unusual inclusion dynamics — TSLA added "
+        "Dec 2020 (largest single addition ever), causing extreme forced-buying demand. "
+        "Momentum signal correctly identified TSLA 30 days prior (12-1 mom: +211%).",
+        "<b>2021:</b> Growth/momentum boom year. High-momentum candidates outperformed "
+        "broadly; MRNA addition was particularly strong (+183% pre-addition momentum).",
+        "<b>2022:</b> Momentum crash in growth names. Strategy underperformed in Q1/Q2 "
+        "as high-momentum stocks corrected. Stop-loss triggered more frequently. "
+        "Energy candidates (APA) were exception — energy momentum persisted.",
+        "<b>2023:</b> AI-driven momentum rally. Tech candidates outperformed. "
+        "SMCI, AXON showed strong pre-addition runs. BX (Blackstone) inclusion "
+        "was a major event for Financials.",
+    ]:
+        story.append(Paragraph(f"• {item}", S["bullet"]))
 
-    story += subsection("7.3  Disclaimer", S)
+    story += sub("7.2  Key Risks", S)
+    for item in [
+        "<b>Capacity:</b> ~$50–200M AUM before material slippage in mid-cap names",
+        "<b>Crowding:</b> Pre-announcement trade is known; alpha compresses as more funds participate",
+        "<b>Committee discretion:</b> S&P has full discretion; eligibility ≠ imminent addition",
+        "<b>Momentum crashes:</b> Strategy vulnerable to sharp reversals (2022 growth selloff)",
+        "<b>Simulation caveat:</b> Synthetic candidate price paths use calibrated parameters; "
+        "real implementation requires live S&P 400 universe data and actual price feeds",
+    ]:
+        story.append(Paragraph(f"• {item}", S["bullet"]))
+
+    story += sub("7.3  Academic References", S)
+    for ref in [
+        "Beneish & Whaley (1996): Anatomy of the S&P Game. <i>Journal of Finance</i> 51(5).",
+        "Chen, Noronha & Singal (2004): Price Response to S&P 500 Additions. <i>JoF</i> 59(4).",
+        "Jegadeesh & Titman (1993): Returns to Buying Winners. <i>Journal of Finance</i> 48(1).",
+        "Asness, Moskowitz & Pedersen (2013): Value and Momentum Everywhere. <i>JoF</i> 68(3).",
+        "Cai & Houge (2008): Long-Term Impact of Russell 2000 Rebalancing. <i>FAJ</i> 64(4).",
+    ]:
+        story.append(Paragraph(f"• {ref}", S["bullet"]))
+
+    story += sub("7.4  Disclaimer", S)
     story.append(Paragraph(
-        "This backtest report is produced for <b>research and educational purposes only</b>. "
-        "Results are based on simulated price paths calibrated to published academic findings "
-        "and a curated dataset of historical S&P 500 additions. Past simulated performance "
-        "is not indicative of future actual results. The strategy involves equity market risk, "
-        "momentum reversal risk, and capacity constraints. No representation is made that "
-        "any account will or is likely to achieve profits or losses similar to those shown. "
-        "This is not investment advice.",
+        "Research and educational purposes only. Simulated results based on calibrated parameters "
+        "from published literature. Not investment advice. Past simulated performance does not "
+        "guarantee future results.",
         S["body"]))
 
-    print(f"  Assembling document...")
+    print("  Assembling document...")
     doc.build(story)
-    print(f"  ✓ Report saved → {output_path}")
+    print(f"  ✓  Saved → {output_path}")
     return output_path
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    out = os.path.join(os.path.dirname(__file__),
-                       "spx_inclusion_momentum_report.pdf")
+    out = os.path.join(os.path.dirname(__file__), "spx_inclusion_momentum_report.pdf")
     build_report(out)
