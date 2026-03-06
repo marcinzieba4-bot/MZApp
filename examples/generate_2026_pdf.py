@@ -16,88 +16,25 @@ Sources used:
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, PageBreak, KeepTogether,
 )
-from reportlab.graphics.shapes import Drawing, Rect, String, Line
 
 from examples.candidates_2026 import build_verified_candidates, Candidate2026
+from examples.pdf_helpers import (
+    A4, cm,
+    PAGE_W, PAGE_H, MARGIN,
+    NAVY, BLUE, TEAL, GREEN, RED, AMBER, LGRAY, MGRAY, DGRAY, WHITE, BLACK, CORAL,
+    S, ST, make_on_page, make_table as _table, candidate_card,
+)
 
-PAGE_W, PAGE_H = A4
-MARGIN = 1.8 * cm
-
-NAVY  = colors.HexColor("#0D1B2A")
-BLUE  = colors.HexColor("#1565C0")
-TEAL  = colors.HexColor("#00796B")
-GREEN = colors.HexColor("#2E7D32")
-RED   = colors.HexColor("#C62828")
-AMBER = colors.HexColor("#E65100")
-LGRAY = colors.HexColor("#F5F5F5")
-MGRAY = colors.HexColor("#E0E0E0")
-DGRAY = colors.HexColor("#757575")
-WHITE = colors.white
-BLACK = colors.black
-CORAL = colors.HexColor("#BF360C")
-
-def S(name, **kw):
-    d = dict(fontSize=8.5, leading=12, fontName="Helvetica", textColor=BLACK, spaceAfter=3)
-    d.update(kw)
-    return ParagraphStyle(name, **d)
-
-ST = {
-    "h1":    S("h1", fontSize=15, leading=20, textColor=NAVY, fontName="Helvetica-Bold",
-                spaceBefore=12, spaceAfter=6),
-    "h2":    S("h2", fontSize=11, leading=14, textColor=BLUE, fontName="Helvetica-Bold",
-                spaceBefore=8, spaceAfter=4),
-    "h3":    S("h3", fontSize=9.5, leading=13, textColor=TEAL, fontName="Helvetica-Bold",
-                spaceBefore=5, spaceAfter=3),
-    "body":  S("body"),
-    "small": S("small", fontSize=7.5, leading=11, textColor=DGRAY),
-    "warn":  S("warn", fontSize=8, leading=12, textColor=CORAL, fontName="Helvetica-Bold"),
-    "corr":  S("corr", fontSize=8, leading=12, textColor=GREEN, fontName="Helvetica-Bold"),
-    "cell":  S("cell", fontSize=7.5, leading=10),
-    "cellb": S("cellb", fontSize=7.5, leading=10, fontName="Helvetica-Bold"),
-    "cellg": S("cellg", fontSize=7.5, leading=10, textColor=GREEN, fontName="Helvetica-Bold"),
-    "cellr": S("cellr", fontSize=7.5, leading=10, textColor=RED, fontName="Helvetica-Bold"),
-    "cella": S("cella", fontSize=7.5, leading=10, textColor=AMBER, fontName="Helvetica-Bold"),
-    "celld": S("celld", fontSize=7.5, leading=10, textColor=DGRAY, fontName="Helvetica-Oblique"),
-}
-
-
-def _on_page(canvas, doc):
-    canvas.saveState()
-    canvas.setFont("Helvetica", 7)
-    canvas.setFillColor(DGRAY)
-    canvas.drawString(MARGIN, 0.7*cm,
-        "MSCI Poland 2026 — Verified Candidate Report  |  Sources: MSCI press releases, PAP Biznes, stockanalysis.com")
-    canvas.drawRightString(PAGE_W - MARGIN, 0.7*cm, f"Page {doc.page}")
-    canvas.restoreState()
-
-
-def _table(rows, col_ratios, header_bg=NAVY, row_colors=None):
-    col_w = [(PAGE_W - 2*MARGIN) * r for r in col_ratios]
-    row_colors = row_colors or [WHITE, LGRAY]
-    t = Table(rows, colWidths=col_w)
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), header_bg),
-        ("TEXTCOLOR",  (0,0), (-1,0), WHITE),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), row_colors),
-        ("GRID",  (0,0), (-1,-1), 0.3, MGRAY),
-        ("TOPPADDING",    (0,0), (-1,-1), 3),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
-        ("LEFTPADDING",   (0,0), (-1,-1), 4),
-        ("RIGHTPADDING",  (0,0), (-1,-1), 4),
-        ("VALIGN",        (0,0), (-1,-1), "TOP"),
-        ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0,0), (-1,0),  7.5),
-    ]))
-    return t
+_on_page = make_on_page(
+    "MSCI Poland 2026 — Verified Candidate Report  |  "
+    "Sources: MSCI press releases, PAP Biznes, stockanalysis.com"
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -408,122 +345,8 @@ def threshold_section():
     return items
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Individual candidate cards
-# ─────────────────────────────────────────────────────────────────────────────
 def _candidate_card(c: Candidate2026) -> list:
-    items = []
-    conv_color = {"HIGH": GREEN, "MEDIUM": TEAL, "WATCH": AMBER, "SHORT": RED}.get(c.conviction, DGRAY)
-    icon = {"HIGH": "★★ TOP PICK", "MEDIUM": "★ MEDIUM", "WATCH": "◇ WATCH", "SHORT": "⚠ SHORT / AVOID"}.get(c.conviction)
-    msci_badge = f"[{c.current_msci_status}]"
-
-    hdr = Table([[
-        Paragraph(f"{c.company}  ({c.ticker})  {msci_badge}",
-                  S("h", fontSize=10, fontName="Helvetica-Bold", textColor=WHITE)),
-        Paragraph(f"{icon}  ·  {c.target_review}  ·  {c.event_type}",
-                  S("h2", fontSize=8, textColor=colors.HexColor("#B0BEC5"), alignment=TA_RIGHT)),
-    ]], colWidths=[(PAGE_W-2*MARGIN)*0.55, (PAGE_W-2*MARGIN)*0.45])
-    hdr.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1), NAVY),
-        ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
-        ("LEFTPADDING",(0,0),(-1,-1),8), ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-    ]))
-    items.append(KeepTogether([hdr]))
-
-    # Metrics strip
-    pct_vs = f"{c.pct_vs_threshold:+.0f}%"
-    metrics = [
-        ("Full cap PLN", f"PLN {c.full_cap_pln_b:.2f}B"),
-        ("Full cap USD", f"${c.full_cap_usd_b:.2f}B"),
-        ("vs threshold", pct_vs),
-        ("Float-adj [EST]", f"${c.float_adj_cap_usd_b:.2f}B"),
-        ("ATVR [EST]", f"{c.atvr_3m_pct:.0f}%"),
-        ("RS% [EST]", f"{c.rs_percentile:.0f}th"),
-        ("200d MA [EST]", "▲ Above" if c.above_200d_ma else "▼ Below"),
-        ("12M return [EST]", f"{c.return_12m_pct:+.0f}%"),
-        ("Forced buy [EST]", f"${abs(c.est_forced_buying_usd_m):.0f}M {'SELL' if c.est_forced_buying_usd_m < 0 else ''}"),
-        ("Filter", "✓ PASS" if c.momentum_passes_filter else "✗ SKIP"),
-    ]
-    n = len(metrics)
-    met_cells = []
-    for m_label, m_val in metrics:
-        is_neg = m_val.startswith("-") or "SKIP" in m_val or "▼" in m_val or "SELL" in m_val
-        is_pos = "✓" in m_val or "▲" in m_val or (m_label == "vs threshold" and "+" in pct_vs)
-        val_color = RED if is_neg else (GREEN if is_pos else BLACK)
-        met_cells.append(Table([
-            [Paragraph(m_label, S("ml", fontSize=6, textColor=DGRAY, fontName="Helvetica-Bold", alignment=TA_CENTER))],
-            [Paragraph(m_val, S("mv", fontSize=8.5, textColor=val_color, fontName="Helvetica-Bold", alignment=TA_CENTER))],
-        ], colWidths=[(PAGE_W-2*MARGIN)/n],
-        style=TableStyle([("BACKGROUND",(0,0),(-1,-1),LGRAY),("BOX",(0,0),(-1,-1),0.3,MGRAY),
-                           ("TOPPADDING",(0,0),(-1,-1),3),("BOTTOMPADDING",(0,0),(-1,-1),3)])))
-    met_t = Table([met_cells], colWidths=[(PAGE_W-2*MARGIN)/n]*n)
-    met_t.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP")]))
-    items.append(met_t)
-
-    # Two-column body
-    thesis_text = c.inclusion_thesis.replace("\n", "<br/>")
-    why_text = c.why_now_in_2026.replace("\n", "<br/>")
-    risks_text = "".join(f"• {r}<br/>" for r in c.key_risks)
-    check_text = "".join(f"{v}<br/>" for v in c.verify_checklist)
-
-    left = Paragraph(
-        f"<b>Why this stock gets included:</b><br/>{thesis_text}<br/><br/>"
-        f"<b>Why 2026 specifically:</b><br/>{why_text}",
-        S("lb", fontSize=7.8, leading=11))
-
-    right_content = [
-        Paragraph("Key Risks", S("rh", fontSize=9, fontName="Helvetica-Bold",
-                                  textColor=RED, spaceAfter=2)),
-        Paragraph(risks_text, S("rb", fontSize=7.5, leading=11)),
-        Spacer(1, 0.1*cm),
-        Paragraph("Verify Before Entry", S("vh", fontSize=9, fontName="Helvetica-Bold",
-                                            textColor=BLUE, spaceAfter=2)),
-        Paragraph(check_text, S("vb", fontSize=7.5, leading=11,
-                                 textColor=colors.HexColor("#1A237E"))),
-    ]
-    right = Table([[item] for item in right_content],
-                  style=TableStyle([("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),2)]))
-
-    body = Table([[left, right]],
-                 colWidths=[(PAGE_W-2*MARGIN)*0.52, (PAGE_W-2*MARGIN)*0.48])
-    body.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"TOP"),
-        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
-        ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
-        ("LINEBEFORE",(1,0),(1,-1),0.5,MGRAY),
-    ]))
-    items.append(body)
-
-    # Entry/exit footer
-    if c.conviction != "SHORT":
-        entry_text = (
-            f"<b>Entry:</b> T−45 before {c.target_review} SAR  |  "
-            f"<b>Est. price [EST]:</b> PLN {c.price_pln:,.0f}  |  "
-            f"<b>TP exit:</b> effective date  |  "
-            f"<b>FP exit:</b> announcement date (if not confirmed)  |  "
-            f"<b>Historical base rate (backtest):</b> Standard Add avg +14.3%  ·  Wt Inc avg +13.2%  "
-            f"(100% win rate, momentum-filtered)"
-        )
-        bg = colors.HexColor("#E3F2FD")
-        border = BLUE
-    else:
-        entry_text = (
-            f"<b>SHORT entry:</b> T−45 before {c.target_review} SAR  |  "
-            f"<b>Cover:</b> effective date  |  "
-            f"<b>Historical deletion return:</b> avg −3.5% announcement day, −5% T−45→effective  |  "
-            f"<b>Post-deletion reversal:</b> +1.5% in 30 days (cover at effective, not after)"
-        )
-        bg = colors.HexColor("#FFEBEE")
-        border = RED
-    footer = Table([[Paragraph(entry_text, S("ft", fontSize=7.5, leading=11))]],
-                   colWidths=[PAGE_W-2*MARGIN])
-    footer.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),bg),("BOX",(0,0),(-1,-1),0.5,border),
-                                 ("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
-                                 ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8)]))
-    items.append(footer)
-    items.append(Spacer(1, 0.5*cm))
-    return items
+    return candidate_card(c, thesis_label="Why this stock gets included")
 
 
 def candidate_section(candidates):
