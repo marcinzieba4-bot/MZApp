@@ -190,7 +190,7 @@ def cover(candidates):
                            ("BOTTOMPADDING",(0,0),(-1,-1),5)]))
 
     tiles = Table([[
-        tile("HIGH CONVICTION", str(len(top)), "Standard Add / Wt Inc", GREEN),
+        tile("HIGH CONVICTION", str(len(top)), "Standard Add (forced buying)", GREEN),
         tile("MEDIUM", str(len(med)), "Standard Add (Nov 2026)", TEAL),
         tile("WATCH", str(len(wat)), "Monitor — insufficient cap", AMBER),
         tile("AVOID / DELETED", str(len(sht)), "Deletion / Small Cap", RED),

@@ -353,7 +353,7 @@ def build_march_2026_candidates() -> list[Candidate2026]:
         company="Asseco Poland S.A.",
         sector="Information Technology — Enterprise Software / IT Services",
         target_review="May 2026",
-        event_type="Weight Increase",
+        event_type="Standard Add",        # added Feb 27 — post-event profile
         current_msci_status="Standard",   # NEWLY ADDED Feb 27, 2026
         current_index_weight_pct=2.0,     # [EST] replacing CCC's ~2.24% slot
 
@@ -553,67 +553,6 @@ def build_march_2026_candidates() -> list[Candidate2026]:
             "☐ Current market cap — any significant movements since March 2026?",
             "☐ FY2025 results — revenue and margin trajectory",
             "☐ Long-term: re-evaluate in 2027 for Standard path",
-        ],
-    ))
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 7. PKO Bank Polski — WEIGHT INCREASE (largest Standard member)
-    # Always relevant; MSCI Poland Standard #1 constituent at ~18.27%
-    # Source: MSCI Poland Standard factsheet; EPOL ETF holdings
-    # ─────────────────────────────────────────────────────────────────────
-    candidates.append(Candidate2026(
-        ticker="PKO",
-        company="PKO Bank Polski S.A.",
-        sector="Financials — Retail / Corporate Banking",
-        target_review="May 2026",
-        event_type="Weight Increase",
-        current_msci_status="Standard",
-        current_index_weight_pct=18.27,   # #1 constituent, verified from MSCI index
-
-        full_cap_pln_b=78.0,              # [EST]
-        full_cap_usd_b=78.0 / PLN_USD,    # [EST] ~$21.2B USD
-        float_adj_cap_usd_b=19.20,        # confirmed ~18-19B from MSCI factsheet
-        atvr_3m_pct=38.0,                 # [EST]
-        price_pln=56.0,                   # [EST]
-
-        return_12m_pct=20.0,              # [EST]
-        rs_percentile=63,                 # [EST]
-        above_200d_ma=True,               # [EST]
-
-        est_forced_buying_usd_m=300,
-        est_adv_days=7.0,
-
-        inclusion_thesis=(
-            "PKO Bank Polski is the largest constituent of MSCI Poland Standard at "
-            "18.27% weight. Weight increases occur mechanically when PKO outperforms "
-            "the index average between two SAR cut-off dates.\n\n"
-            "This is the lowest-risk play in the MSCI Poland strategy: "
-            "PKO is already in the index; the event is simply a weight rebalance, "
-            "not a binary inclusion/exclusion event.\n\n"
-            "FINANCIALS (2025 est.):\n"
-            "PKO is Poland's largest bank by assets (~PLN 500B+). CHF mortgage "
-            "provisions were largely resolved 2023-24 — ROE recovering to 18%+. "
-            "NIM remains elevated despite NBP rate cut expectations. "
-            "IKO mobile banking app is the largest in CEE with 7M+ users.\n\n"
-            "NBP RATE POLICY: Polish central bank is expected to begin cuts in 2026. "
-            "This will compress NIM gradually, but PKO's loan book growth and "
-            "fee income partially offset the NIM compression."
-        ),
-        why_now_in_2026=(
-            "• Polish banking sector: net interest income near all-time highs.\n"
-            "• Dividend: PKO resumed regular dividends after CHF resolution.\n"
-            "• Polish GDP growth 3%+ in 2025 supports loan volume growth.\n"
-            "• Weight increase is a lower-risk MSCI play vs new additions."
-        ),
-        key_risks=[
-            "NBP rate cuts faster than expected → NIM compression.",
-            "State ownership (Treasury 31%) limits float expansion.",
-            "Political direction of bank lending (government-directed credit).",
-        ],
-        verify_checklist=[
-            "☐ PKO Q4 2025 / FY2025 results — NIM and loan growth",
-            "☐ NBP rate decision calendar and latest guidance",
-            "☐ RS percentile vs WIG-ALL — is PKO still above 60th pct?",
         ],
     ))
 

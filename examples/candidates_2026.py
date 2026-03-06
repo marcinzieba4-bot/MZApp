@@ -156,11 +156,22 @@ class Candidate2026:
         self.momentum_passes_filter = self.rs_percentile >= 60.0 and self.above_200d_ma
         if self.event_type in ("Weight Decrease/Deletion", "Deletion Risk"):
             self.conviction = "SHORT"
-        elif self.momentum_passes_filter and self.pct_vs_threshold >= 0:
-            if self.pct_vs_threshold >= 20:
+        elif self.event_type == "Weight Increase":
+            # Weight increases are pure stock-picking (cap-weighted mechanics),
+            # not structural forced-buying events — never warrant HIGH/MEDIUM.
+            self.conviction = "WATCH"
+        elif self.event_type == "Standard Add" and self.current_msci_status == "Small Cap":
+            # New inclusion: real forced-buying event. Score on cap gap + momentum.
+            # MSCI applies a ~15% buffer zone below the lower bound — stocks in that
+            # range can still be added if all other gates (ATVR, float) are met.
+            in_range    = self.pct_vs_threshold >= 0
+            in_buffer   = -15 <= self.pct_vs_threshold < 0
+            if self.momentum_passes_filter and in_range:
                 self.conviction = "HIGH"
-            else:
+            elif self.momentum_passes_filter and in_buffer:
                 self.conviction = "MEDIUM"
+            else:
+                self.conviction = "WATCH"
         else:
             self.conviction = "WATCH"
 
