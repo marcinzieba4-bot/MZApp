@@ -12,6 +12,9 @@ Do NOT add unrelated strategies, frameworks, or example files.
 
 - `examples/spx_inclusion_momentum.py` — master file: all data, signal logic, backtest engine, terminal report
 - `examples/spx_inclusion_momentum_pdf.py` — PDF renderer (imports from above)
+- `telegram/handler.py` — AWS Lambda: Telegram bot (webhook + daily alert)
+- `telegram/template.yaml` — AWS SAM deployment template
+- `telegram/setup.sh` — bot setup helper (register webhook, get chat ID)
 
 ## How to run
 
@@ -29,10 +32,27 @@ Edit `_ADDITIONS_RAW` in `spx_inclusion_momentum.py`. Each row:
 ```
 Also update `_SPX_QUARTERLY` if the year/quarter is new.
 
+## Telegram bot (AWS Lambda)
+
+Deploy with:
+```bash
+export BOT_TOKEN="..."
+export ALLOWED_CHAT_ID="..."
+bash telegram/setup.sh deploy
+export WEBHOOK_URL="<url from output>"
+bash telegram/setup.sh set-webhook
+```
+
+Bot commands: `/run` `/latest` `/next` `/additions` `/help`
+
+Daily alerts fire at 08:00 UTC on entry-window open (T-30), 7 days before
+announcement, and on announcement day itself.
+
 ## Coding conventions
 
 - Self-contained: `spx_inclusion_momentum.py` uses only stdlib (no external deps)
 - PDF file may use `reportlab` and imports from the main file via `sys.path.insert`
+- `telegram/handler.py` imports from `examples/` via `sys.path.insert` — no package installation needed
 - No framework/, no main.py, no unrelated examples
 
 ## What NOT to do

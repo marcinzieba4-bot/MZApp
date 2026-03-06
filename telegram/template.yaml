@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  SPX Inclusion Momentum — Telegram Bot
+  Webhook Lambda + daily EventBridge alert.
+
+# ── Parameters (pass at deploy time or set defaults) ──────────────────────────
+Parameters:
+  BotToken:
+    Type: String
+    NoEcho: true
+    Description: "Telegram bot token from @BotFather"
+
+  AllowedChatId:
+    Type: String
+    Description: "Your Telegram chat ID (integer). Get it via setup.sh."
+
+# ── Globals ───────────────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.12
+    Handler: telegram/handler.lambda_handler
+    CodeUri: ../           # project root — bundles examples/ + telegram/ together
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        TELEGRAM_BOT_TOKEN: !Ref BotToken
+        ALLOWED_CHAT_ID: !Ref AllowedChatId
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── API Gateway (HTTP API, cheaper than REST) ─────────────────────────────
+  BotApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: "$default"
+
+  # ── Webhook Lambda ────────────────────────────────────────────────────────
+  WebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: spx-momentum-telegram-webhook
+      Description: "Receives Telegram webhook updates and replies to commands"
+      Events:
+        Webhook:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BotApi
+            Path: /webhook
+            Method: POST
+
+  # ── Daily alert Lambda ────────────────────────────────────────────────────
+  AlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: spx-momentum-telegram-alert
+      Description: "Daily EventBridge trigger — sends Telegram alert if in entry/announcement window"
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 8 * * ? *)   # 08:00 UTC every day
+            Description: "Daily SPX momentum alert check"
+            Enabled: true
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+Outputs:
+  WebhookUrl:
+    Description: "Set this as your Telegram webhook URL"
+    Value: !Sub "https://${BotApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"
