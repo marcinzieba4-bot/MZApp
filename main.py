@@ -36,6 +36,14 @@ EXAMPLES = {
         "module": "examples.generate_pdf_report",
         "description": "Generate PDF trade log + performance report for the walk-forward backtest",
     },
+    "candidates_2026": {
+        "module": "examples.candidates_2026",
+        "description": "2026 MSCI Poland prospective trade candidates with momentum filter",
+    },
+    "generate_2026_pdf": {
+        "module": "examples.generate_2026_pdf",
+        "description": "Generate PDF with 2026 MSCI Poland prospective trade ideas",
+    },
 }
 
 
